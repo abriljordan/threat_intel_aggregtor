@@ -1,0 +1,509 @@
+{% extends "base.html" %}
+
+{% block title %}Reports - Threat Intelligence{% endblock %}
+
+{% block extra_css %}
+<style>
+    .report-card {
+        transition: all 0.2s ease;
+    }
+    
+    .report-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    
+    .report-filters {
+        background-color: #f8f9fa;
+        border-radius: 10px;
+        padding: 1rem;
+    }
+    
+    .report-list {
+        max-height: 800px;
+        overflow-y: auto;
+    }
+    
+    .report-date {
+        font-size: 0.875rem;
+        color: #6c757d;
+    }
+    
+    .report-type {
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 500;
+        text-transform: uppercase;
+    }
+    
+    .report-type.ip {
+        background-color: rgba(52, 152, 219, 0.1);
+        color: #3498db;
+    }
+    
+    .report-type.domain {
+        background-color: rgba(155, 89, 182, 0.1);
+        color: #9b59b6;
+    }
+    
+    .report-type.shodan {
+        background-color: rgba(46, 204, 113, 0.1);
+        color: #2ecc71;
+    }
+    
+    .report-actions {
+        opacity: 0;
+        transition: opacity 0.2s ease;
+    }
+    
+    .report-card:hover .report-actions {
+        opacity: 1;
+    }
+    
+    .chart-container {
+        position: relative;
+        height: 300px;
+        margin-bottom: 2rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Statistics Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="card-subtitle mb-2 text-muted">Total Reports</h6>
+                    <h2 class="card-title mb-0" id="totalReports">0</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="card-subtitle mb-2 text-muted">High Threat Reports</h6>
+                    <h2 class="card-title mb-0 text-danger" id="highThreatReports">0</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="card-subtitle mb-2 text-muted">Reports Today</h6>
+                    <h2 class="card-title mb-0" id="todayReports">0</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="card-subtitle mb-2 text-muted">Average Threat Score</h6>
+                    <h2 class="card-title mb-0" id="avgThreatScore">0%</h2>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Threat Distribution</h5>
+                    <div class="chart-container">
+                        <canvas id="threatDistributionChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Reports Over Time</h5>
+                    <div class="chart-container">
+                        <canvas id="reportsOverTimeChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reports Section -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">Reports</h5>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-outline-secondary btn-sm" id="refreshReports">
+                            <i class="fas fa-sync-alt me-1"></i>Refresh
+                        </button>
+                        <button class="btn btn-outline-secondary btn-sm" id="exportAllReports">
+                            <i class="fas fa-download me-1"></i>Export All
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <!-- Filters -->
+                    <div class="report-filters mb-4">
+                        <div class="row g-3">
+                            <div class="col-md-3">
+                                <label class="form-label">Report Type</label>
+                                <select class="form-select" id="reportTypeFilter">
+                                    <option value="all">All Types</option>
+                                    <option value="ip">IP Address</option>
+                                    <option value="domain">Domain</option>
+                                    <option value="shodan">Shodan</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Threat Level</label>
+                                <select class="form-select" id="threatLevelFilter">
+                                    <option value="all">All Levels</option>
+                                    <option value="high">High</option>
+                                    <option value="medium">Medium</option>
+                                    <option value="low">Low</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Date Range</label>
+                                <select class="form-select" id="dateRangeFilter">
+                                    <option value="7d">Last 7 Days</option>
+                                    <option value="30d">Last 30 Days</option>
+                                    <option value="90d">Last 90 Days</option>
+                                    <option value="all">All Time</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Sort By</label>
+                                <select class="form-select" id="sortByFilter">
+                                    <option value="date_desc">Date (Newest)</option>
+                                    <option value="date_asc">Date (Oldest)</option>
+                                    <option value="threat_desc">Threat Level (High-Low)</option>
+                                    <option value="threat_asc">Threat Level (Low-High)</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Reports List -->
+                    <div id="reportsList" class="report-list">
+                        <!-- Reports will be loaded here -->
+                        <div class="text-center text-muted py-5" id="noReports">
+                            <i class="fas fa-file-alt fa-3x mb-3"></i>
+                            <p>No reports found</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    // Initialize charts
+    let threatDistributionChart, reportsOverTimeChart;
+    
+    document.addEventListener('DOMContentLoaded', () => {
+        initializeCharts();
+        loadReports();
+        setupEventListeners();
+    });
+
+    function initializeCharts() {
+        // Threat Distribution Chart
+        const threatCtx = document.getElementById('threatDistributionChart').getContext('2d');
+        threatDistributionChart = new Chart(threatCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['High', 'Medium', 'Low'],
+                datasets: [{
+                    data: [0, 0, 0],
+                    backgroundColor: [
+                        'rgba(231, 76, 60, 0.8)',
+                        'rgba(241, 196, 15, 0.8)',
+                        'rgba(46, 204, 113, 0.8)'
+                    ]
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom'
+                    }
+                }
+            }
+        });
+
+        // Reports Over Time Chart
+        const timeCtx = document.getElementById('reportsOverTimeChart').getContext('2d');
+        reportsOverTimeChart = new Chart(timeCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Reports',
+                    data: [],
+                    borderColor: 'rgb(52, 152, 219)',
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            stepSize: 1
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    async function loadReports() {
+        try {
+            const response = await fetch('/api/reports');
+            const data = await response.json();
+            
+            updateStatistics(data.statistics);
+            updateCharts(data.charts);
+            displayReports(data.reports);
+            
+        } catch (error) {
+            console.error('Error loading reports:', error);
+            showAlert('Error loading reports', 'danger');
+        }
+    }
+
+    function updateStatistics(stats) {
+        document.getElementById('totalReports').textContent = stats.totalReports;
+        document.getElementById('highThreatReports').textContent = stats.highThreatReports;
+        document.getElementById('todayReports').textContent = stats.todayReports;
+        document.getElementById('avgThreatScore').textContent = `${stats.avgThreatScore}%`;
+    }
+
+    function updateCharts(chartData) {
+        // Update Threat Distribution Chart
+        threatDistributionChart.data.datasets[0].data = [
+            chartData.threatDistribution.high,
+            chartData.threatDistribution.medium,
+            chartData.threatDistribution.low
+        ];
+        threatDistributionChart.update();
+
+        // Update Reports Over Time Chart
+        reportsOverTimeChart.data.labels = chartData.reportsOverTime.labels;
+        reportsOverTimeChart.data.datasets[0].data = chartData.reportsOverTime.data;
+        reportsOverTimeChart.update();
+    }
+
+    function displayReports(reports) {
+        const reportsList = document.getElementById('reportsList');
+        const noReports = document.getElementById('noReports');
+        
+        if (!reports || reports.length === 0) {
+            noReports.style.display = 'block';
+            return;
+        }
+        
+        noReports.style.display = 'none';
+        reportsList.innerHTML = '';
+        
+        reports.forEach(report => {
+            const card = createReportCard(report);
+            reportsList.appendChild(card);
+        });
+    }
+
+    function createReportCard(report) {
+        const card = document.createElement('div');
+        card.className = 'card report-card mb-3';
+        
+        const threatLevel = getThreatLevel(report);
+        const threatClass = getThreatClass(threatLevel);
+        
+        card.innerHTML = `
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <div class="d-flex align-items-center gap-2 mb-2">
+                            <h5 class="card-title mb-0">${report.target}</h5>
+                            <span class="report-type ${report.type}">${report.type}</span>
+                        </div>
+                        <p class="report-date mb-0">
+                            <i class="far fa-clock me-1"></i>
+                            ${new Date(report.timestamp).toLocaleString()}
+                        </p>
+                    </div>
+                    <div class="d-flex gap-2 report-actions">
+                        <button class="btn btn-sm btn-outline-primary view-report" data-id="${report.id}">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary download-report" data-id="${report.id}">
+                            <i class="fas fa-download"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger delete-report" data-id="${report.id}">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="badge bg-${threatClass} me-2">${threatLevel} Threat</span>
+                            <span class="text-muted">
+                                ${report.dataSources.join(', ')}
+                            </span>
+                        </div>
+                        <div class="text-muted">
+                            <small>Score: ${report.threatScore}%</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Add event listeners
+        card.querySelector('.view-report').addEventListener('click', () => viewReport(report.id));
+        card.querySelector('.download-report').addEventListener('click', () => downloadReport(report.id));
+        card.querySelector('.delete-report').addEventListener('click', () => deleteReport(report.id));
+        
+        return card;
+    }
+
+    function setupEventListeners() {
+        // Filter change events
+        document.getElementById('reportTypeFilter').addEventListener('change', loadReports);
+        document.getElementById('threatLevelFilter').addEventListener('change', loadReports);
+        document.getElementById('dateRangeFilter').addEventListener('change', loadReports);
+        document.getElementById('sortByFilter').addEventListener('change', loadReports);
+        
+        // Button events
+        document.getElementById('refreshReports').addEventListener('click', loadReports);
+        document.getElementById('exportAllReports').addEventListener('click', exportAllReports);
+    }
+
+    // Helper functions
+    function getThreatLevel(report) {
+        if (report.threatScore > 80) return 'High';
+        if (report.threatScore > 50) return 'Medium';
+        return 'Low';
+    }
+
+    function getThreatClass(level) {
+        return level.toLowerCase();
+    }
+
+    async function viewReport(reportId) {
+        try {
+            const response = await fetch(`/api/reports/${reportId}`);
+            const report = await response.json();
+            
+            // Implement report viewing logic
+            // This could open a modal or navigate to a detailed view
+            console.log('View report:', report);
+            
+        } catch (error) {
+            console.error('Error viewing report:', error);
+            showAlert('Error viewing report', 'danger');
+        }
+    }
+
+    async function downloadReport(reportId) {
+        try {
+            const response = await fetch(`/api/reports/${reportId}/download`);
+            const blob = await response.blob();
+            
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `report_${reportId}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+        } catch (error) {
+            console.error('Error downloading report:', error);
+            showAlert('Error downloading report', 'danger');
+        }
+    }
+
+    async function deleteReport(reportId) {
+        if (!confirm('Are you sure you want to delete this report?')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/api/reports/${reportId}`, {
+                method: 'DELETE'
+            });
+            
+            if (response.ok) {
+                showAlert('Report deleted successfully', 'success');
+                loadReports();
+            } else {
+                throw new Error('Failed to delete report');
+            }
+            
+        } catch (error) {
+            console.error('Error deleting report:', error);
+            showAlert('Error deleting report', 'danger');
+        }
+    }
+
+    async function exportAllReports() {
+        try {
+            const response = await fetch('/api/reports/export');
+            const blob = await response.blob();
+            
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `all_reports_${new Date().toISOString()}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+        } catch (error) {
+            console.error('Error exporting reports:', error);
+            showAlert('Error exporting reports', 'danger');
+        }
+    }
+
+    function showAlert(message, type = 'info') {
+        const alertDiv = document.createElement('div');
+        alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+        alertDiv.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        
+        document.querySelector('.container-fluid').insertBefore(
+            alertDiv,
+            document.querySelector('.row')
+        );
+        
+        setTimeout(() => {
+            alertDiv.remove();
+        }, 5000);
+    }
+</script>
+{% endblock %} 

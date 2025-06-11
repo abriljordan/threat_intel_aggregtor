@@ -1,0 +1,415 @@
+{% extends "base.html" %}
+
+{% block title %}Search - Threat Intelligence{% endblock %}
+
+{% block extra_css %}
+<style>
+    .search-filters {
+        background-color: #f8f9fa;
+        border-radius: 10px;
+        padding: 1rem;
+    }
+    
+    .filter-group {
+        margin-bottom: 1rem;
+    }
+    
+    .search-results {
+        max-height: 600px;
+        overflow-y: auto;
+    }
+    
+    .result-card {
+        transition: transform 0.2s;
+    }
+    
+    .result-card:hover {
+        transform: translateY(-2px);
+    }
+    
+    .threat-level {
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.875rem;
+        font-weight: 500;
+    }
+    
+    .threat-level.high {
+        background-color: rgba(231, 76, 60, 0.1);
+        color: #e74c3c;
+    }
+    
+    .threat-level.medium {
+        background-color: rgba(241, 196, 15, 0.1);
+        color: #f1c40f;
+    }
+    
+    .threat-level.low {
+        background-color: rgba(46, 204, 113, 0.1);
+        color: #2ecc71;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Advanced Search</h5>
+                    <form id="searchForm" class="row g-3">
+                        <!-- Search Input -->
+                        <div class="col-md-6">
+                            <div class="input-group">
+                                <span class="input-group-text">
+                                    <i class="fas fa-search"></i>
+                                </span>
+                                <input type="text" class="form-control" id="searchQuery" 
+                                       placeholder="Enter IP, domain, or Shodan query" required>
+                            </div>
+                        </div>
+
+                        <!-- Search Type -->
+                        <div class="col-md-3">
+                            <select class="form-select" id="searchType">
+                                <option value="ip">IP Address</option>
+                                <option value="domain">Domain</option>
+                                <option value="shodan">Shodan Query</option>
+                            </select>
+                        </div>
+
+                        <!-- Search Button -->
+                        <div class="col-md-3">
+                            <button type="submit" class="btn btn-primary w-100">
+                                <i class="fas fa-search me-2"></i>Search
+                            </button>
+                        </div>
+
+                        <!-- Advanced Filters -->
+                        <div class="col-12 mt-3">
+                            <div class="search-filters">
+                                <div class="row">
+                                    <!-- API Selection -->
+                                    <div class="col-md-4 filter-group">
+                                        <label class="form-label">Data Sources</label>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="apiAbuseIPDB" checked>
+                                            <label class="form-check-label" for="apiAbuseIPDB">
+                                                AbuseIPDB
+                                            </label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="apiVirusTotal" checked>
+                                            <label class="form-check-label" for="apiVirusTotal">
+                                                VirusTotal
+                                            </label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="apiShodan" checked>
+                                            <label class="form-check-label" for="apiShodan">
+                                                Shodan
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <!-- Threat Level Filter -->
+                                    <div class="col-md-4 filter-group">
+                                        <label class="form-label">Threat Level</label>
+                                        <select class="form-select" id="threatLevel">
+                                            <option value="all">All Levels</option>
+                                            <option value="high">High</option>
+                                            <option value="medium">Medium</option>
+                                            <option value="low">Low</option>
+                                        </select>
+                                    </div>
+
+                                    <!-- Time Range -->
+                                    <div class="col-md-4 filter-group">
+                                        <label class="form-label">Time Range</label>
+                                        <select class="form-select" id="timeRange">
+                                            <option value="24h">Last 24 Hours</option>
+                                            <option value="7d">Last 7 Days</option>
+                                            <option value="30d">Last 30 Days</option>
+                                            <option value="all">All Time</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Search Results -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">Search Results</h5>
+                    <div class="btn-group">
+                        <button class="btn btn-outline-secondary btn-sm" id="exportJson">
+                            <i class="fas fa-file-code me-1"></i>Export JSON
+                        </button>
+                        <button class="btn btn-outline-secondary btn-sm" id="exportCsv">
+                            <i class="fas fa-file-csv me-1"></i>Export CSV
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div id="searchResults" class="search-results">
+                        <!-- Results will be displayed here -->
+                        <div class="text-center text-muted py-5" id="noResults">
+                            <i class="fas fa-search fa-3x mb-3"></i>
+                            <p>Enter a search query to begin</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Handle search form submission
+    document.getElementById('searchForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const query = document.getElementById('searchQuery').value;
+        const searchType = document.getElementById('searchType').value;
+        const apis = [];
+        
+        // Get selected APIs
+        if (document.getElementById('apiAbuseIPDB').checked) apis.push('abuseipdb');
+        if (document.getElementById('apiVirusTotal').checked) apis.push('virustotal');
+        if (document.getElementById('apiShodan').checked) apis.push('shodan');
+        
+        if (apis.length === 0) {
+            showAlert('Please select at least one data source', 'warning');
+            return;
+        }
+        
+        try {
+            let endpoint, payload;
+            
+            if (searchType === 'shodan') {
+                endpoint = '/api/search';
+                payload = { query };
+            } else {
+                endpoint = `/api/check/${query}`;
+                payload = { apis };
+            }
+            
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+            
+            const results = await response.json();
+            displayResults(results, searchType);
+            
+        } catch (error) {
+            console.error('Error:', error);
+            showAlert('Error performing search', 'danger');
+        }
+    });
+
+    // Display search results
+    function displayResults(results, searchType) {
+        const resultsDiv = document.getElementById('searchResults');
+        const noResults = document.getElementById('noResults');
+        
+        if (Object.keys(results).length === 0) {
+            noResults.style.display = 'block';
+            return;
+        }
+        
+        noResults.style.display = 'none';
+        resultsDiv.innerHTML = '';
+        
+        if (searchType === 'shodan') {
+            displayShodanResults(results);
+        } else {
+            displayThreatResults(results);
+        }
+    }
+
+    // Display Shodan search results
+    function displayShodanResults(results) {
+        const resultsDiv = document.getElementById('searchResults');
+        
+        if (!results.matches || results.matches.length === 0) {
+            resultsDiv.innerHTML = '<div class="alert alert-info">No results found</div>';
+            return;
+        }
+        
+        const matches = results.matches;
+        matches.forEach(match => {
+            const card = document.createElement('div');
+            card.className = 'card result-card mb-3';
+            
+            const threatLevel = getThreatLevel(match);
+            const threatClass = getThreatClass(threatLevel);
+            
+            card.innerHTML = `
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <h5 class="card-title">${match.ip_str}</h5>
+                            <p class="card-text text-muted">
+                                ${match.org || 'Unknown Organization'} • 
+                                ${match.location?.country_name || 'Unknown Location'}
+                            </p>
+                        </div>
+                        <span class="threat-level ${threatClass}">${threatLevel}</span>
+                    </div>
+                    <div class="mt-3">
+                        <h6>Details:</h6>
+                        <ul class="list-unstyled">
+                            <li><strong>Ports:</strong> ${match.ports?.join(', ') || 'N/A'}</li>
+                            <li><strong>OS:</strong> ${match.os || 'Unknown'}</li>
+                            <li><strong>Hostnames:</strong> ${match.hostnames?.join(', ') || 'N/A'}</li>
+                        </ul>
+                    </div>
+                </div>
+            `;
+            
+            resultsDiv.appendChild(card);
+        });
+    }
+
+    // Display threat intelligence results
+    function displayThreatResults(results) {
+        const resultsDiv = document.getElementById('searchResults');
+        
+        for (const [api, data] of Object.entries(results)) {
+            if (data.error) {
+                resultsDiv.innerHTML += `
+                    <div class="alert alert-danger">
+                        <h6>${api.toUpperCase()} Error</h6>
+                        <p>${data.error}</p>
+                    </div>
+                `;
+                continue;
+            }
+            
+            const card = document.createElement('div');
+            card.className = 'card result-card mb-3';
+            
+            const threatLevel = getThreatLevel(data);
+            const threatClass = getThreatClass(threatLevel);
+            
+            card.innerHTML = `
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0">${api.toUpperCase()} Analysis</h6>
+                    <span class="threat-level ${threatClass}">${threatLevel}</span>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>Basic Information</h6>
+                            <ul class="list-unstyled">
+                                ${formatBasicInfo(data)}
+                            </ul>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>Threat Details</h6>
+                            <ul class="list-unstyled">
+                                ${formatThreatInfo(data)}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            resultsDiv.appendChild(card);
+        }
+    }
+
+    // Helper functions
+    function getThreatLevel(data) {
+        // Implement threat level logic based on API data
+        if (data.abuseConfidenceScore > 80) return 'High';
+        if (data.abuseConfidenceScore > 50) return 'Medium';
+        return 'Low';
+    }
+
+    function getThreatClass(level) {
+        return level.toLowerCase();
+    }
+
+    function formatBasicInfo(data) {
+        // Format basic information based on API
+        const info = [];
+        if (data.ip) info.push(`<li><strong>IP:</strong> ${data.ip}</li>`);
+        if (data.domain) info.push(`<li><strong>Domain:</strong> ${data.domain}</li>`);
+        if (data.country) info.push(`<li><strong>Country:</strong> ${data.country}</li>`);
+        return info.join('');
+    }
+
+    function formatThreatInfo(data) {
+        // Format threat information based on API
+        const info = [];
+        if (data.abuseConfidenceScore) {
+            info.push(`<li><strong>Abuse Score:</strong> ${data.abuseConfidenceScore}%</li>`);
+        }
+        if (data.totalReports) {
+            info.push(`<li><strong>Total Reports:</strong> ${data.totalReports}</li>`);
+        }
+        if (data.lastReportedAt) {
+            info.push(`<li><strong>Last Reported:</strong> ${new Date(data.lastReportedAt).toLocaleString()}</li>`);
+        }
+        return info.join('');
+    }
+
+    // Export functions
+    document.getElementById('exportJson').addEventListener('click', () => {
+        const results = document.getElementById('searchResults').innerHTML;
+        if (!results) {
+            showAlert('No results to export', 'warning');
+            return;
+        }
+        
+        const blob = new Blob([JSON.stringify(results, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `threat_intel_${new Date().toISOString()}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    });
+
+    document.getElementById('exportCsv').addEventListener('click', () => {
+        // Implement CSV export
+        showAlert('CSV export not implemented yet', 'info');
+    });
+
+    // Show alert message
+    function showAlert(message, type = 'info') {
+        const alertDiv = document.createElement('div');
+        alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+        alertDiv.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        
+        document.querySelector('.container-fluid').insertBefore(
+            alertDiv,
+            document.querySelector('.row')
+        );
+        
+        setTimeout(() => {
+            alertDiv.remove();
+        }, 5000);
+    }
+</script>
+{% endblock %} 

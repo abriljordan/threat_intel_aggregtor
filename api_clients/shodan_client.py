@@ -1,7 +1,8 @@
 import shodan
 import ipaddress
+from .base import BaseConnector
 
-class ShodanClient:
+class ShodanClient(BaseConnector):
     """Client for interacting with the Shodan API"""
     
     def __init__(self, api_key):
@@ -51,7 +52,7 @@ class ShodanClient:
         except Exception as e:
             return {"error": f"Error checking IP with Shodan: {str(e)}"}
     
-    def search_domain(self, domain):
+    def check_domain(self, domain):
         """
         Search for information about a domain
         
@@ -113,7 +114,7 @@ if __name__ == "__main__":
         
         # Example domain search
         print("\nTesting domain search...")
-        result = client.search_domain("google.com")
+        result = client.check_domain("google.com")
         print(f"Domain Search Results ({result.get('data', {}).get('total', 0)} found):")
         for i, r in enumerate(result.get('data', {}).get('results', [])[:3], 1):
             print(f"{i}. {r['ip']}:{r['port']} - {r.get('product', 'Unknown')}")

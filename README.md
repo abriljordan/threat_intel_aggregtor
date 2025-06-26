@@ -1,6 +1,6 @@
 # Threat Intelligence Aggregator
 
-A modern web application that aggregates threat intelligence data from multiple sources including AbuseIPDB, VirusTotal, and Shodan. The application provides both a command-line interface (CLI) and a web dashboard for threat intelligence analysis.
+A modern web application that aggregates threat intelligence data from multiple sources including AbuseIPDB, VirusTotal, and Shodan. The application provides a web dashboard for threat intelligence analysis.
 
 ## Features
 
@@ -11,13 +11,6 @@ A modern web application that aggregates threat intelligence data from multiple 
 - Report generation and management
 - User authentication and session management
 - Responsive design for all devices
-
-### Command Line Interface
-- Interactive CLI with rich formatting
-- Multiple data source integration
-- Report generation in JSON format
-- Command history and tab completion
-- Real-time threat intelligence checks
 
 ## Screenshots
 
@@ -42,7 +35,7 @@ The reports view displays historical threat intelligence data with detailed anal
 - Python 3.9 or higher
 - API keys for:
   - [AbuseIPDB](https://www.abuseipdb.com/account/api)
-  - [VirusTotal](https://www.virustotal.com/gui/join-us)
+  - [VirusTotal](https://www.virustotal.com/join-us)
   - [Shodan](https://account.shodan.io/register)
 
 ## Installation
@@ -56,7 +49,7 @@ cd threat_intel_aggregator
 2. Create and activate a virtual environment:
 ```bash
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/bin/activate
 ```
 
 3. Install dependencies:
@@ -86,20 +79,6 @@ python run.py
    - Username: `admin`
    - Password: `admin123`
 
-### Command Line Interface
-
-1. Run the interactive CLI:
-```bash
-python interactive_cli.py
-```
-
-2. Available commands:
-   - `check <ip/domain>` - Check a target using specified APIs
-   - `search <query>` - Search using Shodan
-   - `help` - Show available commands
-   - `clear` - Clear the screen
-   - `exit` - Exit the application
-
 ## Project Structure
 
 ```
@@ -111,7 +90,6 @@ threat_intel_aggregator/
 │   ├── models.py        # Database models
 │   └── routes.py        # Route handlers
 ├── reports/             # Generated reports
-├── interactive_cli.py   # CLI implementation
 ├── run.py              # Web server entry point
 └── requirements.txt    # Project dependencies
 ```
@@ -144,7 +122,7 @@ Reports are generated in JSON format and include:
 - Threat scores and confidence levels
 - Additional metadata
 
-Reports are stored in the `reports/` directory and can be accessed through both the web dashboard and CLI.
+Reports are stored in the `reports/` directory and can be accessed through the web dashboard.
 
 ## Contributing
 

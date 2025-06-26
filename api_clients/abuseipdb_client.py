@@ -1,8 +1,9 @@
 import os
 import requests
 from dotenv import load_dotenv
+from .base import BaseConnector
 
-class AbuseIPDBClient:
+class AbuseIPDBClient(BaseConnector):
     """Client for interacting with the AbuseIPDB API."""
     
     def __init__(self, api_key=None):

@@ -83,23 +83,15 @@ def check_target(target):
     try:
         data = request.get_json()
         apis = data.get('apis', ['abuseipdb', 'virustotal', 'shodan'])
-        
         results = {}
-        
         if 'abuseipdb' in apis:
             results['abuseipdb'] = abuseipdb_client.check_ip(target)
-            
         if 'virustotal' in apis:
             results['virustotal'] = virustotal_client.check_ip(target)
-            
         if 'shodan' in apis:
-            results['shodan'] = shodan_client.get_ip_info(target)
-        
-        # Save report
+            results['shodan'] = shodan_client.check_ip(target)
         save_report(target, results)
-        
         return jsonify(results)
-        
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -109,13 +101,11 @@ def search_shodan():
     try:
         data = request.get_json()
         query = data.get('query')
-        
         if not query:
             return jsonify({'error': 'Query is required'}), 400
-            
-        results = shodan_client.search(query)
+        # Use check_domain for domain search
+        results = shodan_client.check_domain(query)
         return jsonify(results)
-        
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

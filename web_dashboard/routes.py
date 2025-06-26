@@ -7,6 +7,7 @@ import sys
 import os
 from dotenv import load_dotenv
 from .models import User
+import glob
 
 # Add parent directory to path to import API clients
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -23,18 +24,21 @@ load_dotenv()
 from api_clients.abuseipdb_client import AbuseIPDBClient
 from api_clients.virustotal_client import VirusTotalClient
 from api_clients.shodan_client import ShodanClient
+from api_clients.httpbl_client import HttpBLClient
 
 # Initialize API clients
 abuseipdb_client = AbuseIPDBClient(os.getenv('ABUSEIPDB_API_KEY'))
 virustotal_client = VirusTotalClient(os.getenv('VIRUSTOTAL_API_KEY'))
 shodan_client = ShodanClient(os.getenv('SHODAN_API_KEY'))
+httpbl_client = HttpBLClient(os.getenv('HTTPBL_ACCESS_KEY'))
 
 # Main routes
 @main.route('/')
 @main.route('/dashboard')
 @login_required
 def dashboard():
-    return render_template('dashboard.html')
+    stats = get_dashboard_stats()
+    return render_template('dashboard.html', stats=stats)
 
 @main.route('/search')
 @login_required
@@ -82,14 +86,23 @@ def logout():
 def check_target(target):
     try:
         data = request.get_json()
-        apis = data.get('apis', ['abuseipdb', 'virustotal', 'shodan'])
+        apis = data.get('apis', ['abuseipdb', 'virustotal', 'shodan', 'httpbl'])
+
+        # Try to load a recent cached result
+        cached_results = load_recent_report(target)
+        if cached_results:
+            return jsonify(cached_results)
+
         results = {}
-        if 'abuseipdb' in apis:
+        if 'abuseipdb' in apis or 'all' in apis:
             results['abuseipdb'] = abuseipdb_client.check_ip(target)
-        if 'virustotal' in apis:
+        if 'virustotal' in apis or 'all' in apis:
             results['virustotal'] = virustotal_client.check_ip(target)
-        if 'shodan' in apis:
+        if 'shodan' in apis or 'all' in apis:
             results['shodan'] = shodan_client.check_ip(target)
+        if 'httpbl' in apis or 'all' in apis:
+            results['httpbl'] = httpbl_client.check_ip(target)
+
         save_report(target, results)
         return jsonify(results)
     except Exception as e:
@@ -148,3 +161,60 @@ def save_report(target, results):
             'timestamp': datetime.now().isoformat(),
             'results': results
         }, f, indent=2)
+
+def get_dashboard_stats():
+    reports_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'reports')
+    if not os.path.exists(reports_dir):
+        return {
+            'total_checks': 0,
+            'malicious_ips': 0,
+            'total_reports': 0,
+            'recent_activity': []
+        }
+    report_files = sorted(glob.glob(os.path.join(reports_dir, 'report_*.json')), reverse=True)
+    total_checks = len(report_files)
+    malicious_ips = 0
+    recent_activity = []
+    for report_file in report_files[:5]:  # Only show last 5
+        with open(report_file, 'r') as f:
+            data = json.load(f)
+            target = data.get('target')
+            timestamp = data.get('timestamp')
+            results = data.get('results', {})
+            # Check if any API flagged as malicious (abuseConfidenceScore > 80 or similar)
+            is_malicious = False
+            for api_result in results.values():
+                d = api_result.get('data') or api_result
+                if d.get('abuseConfidenceScore', 0) > 80:
+                    is_malicious = True
+                if 'last_analysis_stats' in d:
+                    stats = d['last_analysis_stats']
+                    if stats.get('malicious', 0) > 0:
+                        is_malicious = True
+            if is_malicious:
+                malicious_ips += 1
+            recent_activity.append({
+                'target': target,
+                'timestamp': timestamp,
+                'is_malicious': is_malicious
+            })
+    return {
+        'total_checks': total_checks,
+        'malicious_ips': malicious_ips,
+        'total_reports': total_checks,
+        'recent_activity': recent_activity
+    }
+
+def load_recent_report(target, max_age_hours=24):
+    """Load the most recent report for a target if it's within max_age_hours."""
+    reports_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'reports')
+    pattern = os.path.join(reports_dir, f'report_{target}_*.json')
+    report_files = sorted(glob.glob(pattern), reverse=True)
+    now = datetime.now()
+    for report_file in report_files:
+        with open(report_file, 'r') as f:
+            data = json.load(f)
+            timestamp = datetime.fromisoformat(data.get('timestamp'))
+            if (now - timestamp).total_seconds() < max_age_hours * 3600:
+                return data['results']
+    return None

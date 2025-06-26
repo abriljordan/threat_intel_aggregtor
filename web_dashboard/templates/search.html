@@ -111,6 +111,12 @@
                                                 Shodan
                                             </label>
                                         </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="apiHttpBL" checked>
+                                            <label class="form-check-label" for="apiHttpBL">
+                                                Project Honey Pot (http:BL)
+                                            </label>
+                                        </div>
                                     </div>
 
                                     <!-- Threat Level Filter -->
@@ -187,6 +193,7 @@
         if (document.getElementById('apiAbuseIPDB').checked) apis.push('abuseipdb');
         if (document.getElementById('apiVirusTotal').checked) apis.push('virustotal');
         if (document.getElementById('apiShodan').checked) apis.push('shodan');
+        if (document.getElementById('apiHttpBL').checked) apis.push('httpbl');
         
         if (apis.length === 0) {
             showAlert('Please select at least one data source', 'warning');
@@ -303,8 +310,39 @@
             const card = document.createElement('div');
             card.className = 'card result-card mb-3';
             
-            const threatLevel = getThreatLevel(data);
-            const threatClass = getThreatClass(threatLevel);
+            let threatLevel = getThreatLevel(data);
+            let threatClass = getThreatClass(threatLevel);
+            
+            // Special display for httpbl
+            if (api === 'httpbl') {
+                card.innerHTML = `
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h6 class="mb-0">Project Honey Pot (http:BL) Analysis</h6>
+                        <span class="threat-level ${threatClass}">${threatLevel}</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6>Basic Information</h6>
+                                <ul class="list-unstyled">
+                                    <li><strong>Listed:</strong> ${data.listed ? 'Yes' : 'No'}</li>
+                                    <li><strong>Threat Score:</strong> ${data.threat_score !== undefined ? data.threat_score : 'N/A'}</li>
+                                    <li><strong>Days Since Last Activity:</strong> ${data.days_since !== undefined ? data.days_since : 'N/A'}</li>
+                                </ul>
+                            </div>
+                            <div class="col-md-6">
+                                <h6>Threat Details</h6>
+                                <ul class="list-unstyled">
+                                    <li><strong>Visitor Type:</strong> ${data.visitor_type ? data.visitor_type.join(', ') : 'N/A'}</li>
+                                    ${data.error ? `<li><strong>Error:</strong> ${data.error}</li>` : ''}
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                resultsDiv.appendChild(card);
+                continue;
+            }
             
             card.innerHTML = `
                 <div class="card-header d-flex justify-content-between align-items-center">
@@ -335,9 +373,27 @@
 
     // Helper functions
     function getThreatLevel(data) {
-        // Implement threat level logic based on API data
-        if (data.abuseConfidenceScore > 80) return 'High';
-        if (data.abuseConfidenceScore > 50) return 'Medium';
+        const d = data.data || data;
+        // AbuseIPDB
+        if (d.abuseConfidenceScore !== undefined) {
+            if (d.abuseConfidenceScore > 80) return 'High';
+            if (d.abuseConfidenceScore > 50) return 'Medium';
+        }
+        // VirusTotal
+        if (d.last_analysis_stats && d.last_analysis_stats.malicious > 0) {
+            return 'High';
+        }
+        // Shodan (example: if vulnerabilities found)
+        if (d.vulns && d.vulns.length > 0) {
+            return 'High';
+        }
+        // http:BL
+        if (data.listed && data.threat_score !== undefined) {
+            if (data.threat_score > 80) return 'High';
+            if (data.threat_score > 50) return 'Medium';
+            return 'Low';
+        }
+        // Default
         return 'Low';
     }
 
@@ -346,25 +402,54 @@
     }
 
     function formatBasicInfo(data) {
-        // Format basic information based on API
+        // Support nested data (e.g., data.data)
+        const d = data.data || data;
+        const attr = d.attributes || {};
         const info = [];
-        if (data.ip) info.push(`<li><strong>IP:</strong> ${data.ip}</li>`);
-        if (data.domain) info.push(`<li><strong>Domain:</strong> ${data.domain}</li>`);
-        if (data.country) info.push(`<li><strong>Country:</strong> ${data.country}</li>`);
+        // Debug: print the data structure to the console
+        console.log('BasicInfo data:', data);
+        // General fields
+        if (d.ip || d.ip_str) info.push(`<li><strong>IP:</strong> ${d.ip || d.ip_str}</li>`);
+        if (d.domain) info.push(`<li><strong>Domain:</strong> ${d.domain}</li>`);
+        if (d.id) info.push(`<li><strong>ID:</strong> ${d.id}</li>`);
+        if (d.country || d.country_name || attr.country) info.push(`<li><strong>Country:</strong> ${d.country || d.country_name || attr.country}</li>`);
+        if (d.city) info.push(`<li><strong>City:</strong> ${d.city}</li>`);
+        if (d.org) info.push(`<li><strong>Org:</strong> ${d.org}</li>`);
+        if (d.asn || attr.asn) info.push(`<li><strong>ASN:</strong> ${d.asn || attr.asn}</li>`);
+        if (d.as_owner || attr.as_owner) info.push(`<li><strong>AS Owner:</strong> ${d.as_owner || attr.as_owner}</li>`);
+        if ((d.hostnames && d.hostnames.length) || (attr.hostnames && attr.hostnames.length)) info.push(`<li><strong>Hostnames:</strong> ${(d.hostnames || attr.hostnames).join(', ')}</li>`);
+        if (attr.last_dns_records && attr.last_dns_records.length)
+            info.push(`<li><strong>DNS Records:</strong> ${attr.last_dns_records.map(r => r.value).join(', ')}</li>`);
         return info.join('');
     }
 
     function formatThreatInfo(data) {
-        // Format threat information based on API
+        // Support nested data (e.g., data.data)
+        const d = data.data || data;
+        const attr = d.attributes || {};
         const info = [];
-        if (data.abuseConfidenceScore) {
-            info.push(`<li><strong>Abuse Score:</strong> ${data.abuseConfidenceScore}%</li>`);
+        // Debug: print the data structure to the console
+        console.log('ThreatInfo data:', data);
+        if (d.abuseConfidenceScore !== undefined) {
+            info.push(`<li><strong>Abuse Score:</strong> ${d.abuseConfidenceScore}%</li>`);
         }
-        if (data.totalReports) {
-            info.push(`<li><strong>Total Reports:</strong> ${data.totalReports}</li>`);
+        if (attr.last_analysis_stats)
+            info.push(`<li><strong>Last Analysis Stats:</strong> ${JSON.stringify(attr.last_analysis_stats)}</li>`);
+        if (attr.categories && Object.keys(attr.categories).length)
+            info.push(`<li><strong>Categories:</strong> ${Object.values(attr.categories).join(', ')}</li>`);
+        if (attr.last_analysis_results)
+            info.push(`<li><strong>Last Analysis Results:</strong> <pre>${JSON.stringify(attr.last_analysis_results, null, 2)}</pre></li>`);
+        if (d.totalReports !== undefined) {
+            info.push(`<li><strong>Total Reports:</strong> ${d.totalReports}</li>`);
         }
-        if (data.lastReportedAt) {
-            info.push(`<li><strong>Last Reported:</strong> ${new Date(data.lastReportedAt).toLocaleString()}</li>`);
+        if (d.lastReportedAt) {
+            info.push(`<li><strong>Last Reported:</strong> ${new Date(d.lastReportedAt).toLocaleString()}</li>`);
+        }
+        if (d.vulns && d.vulns.length) {
+            info.push(`<li><strong>Vulnerabilities:</strong> ${d.vulns.join(', ')}</li>`);
+        }
+        if (d.ports && d.ports.length) {
+            info.push(`<li><strong>Ports:</strong> ${d.ports.join(', ')}</li>`);
         }
         return info.join('');
     }

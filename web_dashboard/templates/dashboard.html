@@ -40,6 +40,14 @@
 
 {% block content %}
 <div class="container-fluid">
+    <!-- Info Alert -->
+    <div class="row mb-3">
+        <div class="col-12">
+            <div class="alert alert-info" role="alert">
+                <strong>Welcome to the Dashboard!</strong> Here you can view overall threat intelligence statistics, recent activity, and perform quick searches across multiple data sources. Hover over the <i class="fas fa-info-circle"></i> icons for more information.
+            </div>
+        </div>
+    </div>
     <!-- Quick Search -->
     <div class="row mb-4">
         <div class="col-12">
@@ -57,6 +65,7 @@
                                 <option value="abuseipdb">AbuseIPDB</option>
                                 <option value="virustotal">VirusTotal</option>
                                 <option value="shodan">Shodan</option>
+                                <option value="httpbl">Project Honey Pot (http:BL)</option>
                             </select>
                         </div>
                         <div class="col-md-2">
@@ -77,8 +86,10 @@
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
-                            <h6 class="card-subtitle mb-2">Total Checks</h6>
-                            <h2 class="card-title mb-0" id="totalChecks">0</h2>
+                            <h6 class="card-subtitle mb-2" data-bs-toggle="tooltip" title="Total number of threat intelligence checks performed by all users.">
+                                Total Checks <i class="fas fa-info-circle text-light ms-1"></i>
+                            </h6>
+                            <h2 class="card-title mb-0" id="totalChecks">{{ stats.total_checks }}</h2>
                         </div>
                         <div class="icon">
                             <i class="fas fa-shield-alt"></i>
@@ -92,8 +103,10 @@
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
-                            <h6 class="card-subtitle mb-2">Malicious IPs</h6>
-                            <h2 class="card-title mb-0" id="maliciousIPs">0</h2>
+                            <h6 class="card-subtitle mb-2" data-bs-toggle="tooltip" title="Number of IP addresses identified as malicious based on threat intelligence sources.">
+                                Malicious IPs <i class="fas fa-info-circle text-light ms-1"></i>
+                            </h6>
+                            <h2 class="card-title mb-0" id="maliciousIPs">{{ stats.malicious_ips }}</h2>
                         </div>
                         <div class="icon">
                             <i class="fas fa-skull-crossbones"></i>
@@ -107,8 +120,10 @@
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
-                            <h6 class="card-subtitle mb-2">Total Reports</h6>
-                            <h2 class="card-title mb-0" id="totalReports">0</h2>
+                            <h6 class="card-subtitle mb-2" data-bs-toggle="tooltip" title="Total number of reports generated and saved in the system.">
+                                Total Reports <i class="fas fa-info-circle text-light ms-1"></i>
+                            </h6>
+                            <h2 class="card-title mb-0" id="totalReports">{{ stats.total_reports }}</h2>
                         </div>
                         <div class="icon">
                             <i class="fas fa-file-alt"></i>
@@ -122,7 +137,9 @@
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
-                            <h6 class="card-subtitle mb-2">API Status</h6>
+                            <h6 class="card-subtitle mb-2" data-bs-toggle="tooltip" title="Shows if the integrated APIs are currently reachable and operational.">
+                                API Status <i class="fas fa-info-circle text-light ms-1"></i>
+                            </h6>
                             <h2 class="card-title mb-0" id="apiStatus">Online</h2>
                         </div>
                         <div class="icon">
@@ -158,7 +175,21 @@
                 </div>
                 <div class="card-body">
                     <div id="recentActivity" class="list-group">
-                        <!-- Activity items will be added here dynamically -->
+                        {% if stats.recent_activity %}
+                            {% for activity in stats.recent_activity %}
+                            <div class="list-group-item d-flex justify-content-between align-items-center">
+                                <div>
+                                    <strong>{{ activity.target }}</strong>
+                                    {% if activity.is_malicious %}
+                                        <span class="badge bg-danger ms-2">Malicious</span>
+                                    {% endif %}
+                                </div>
+                                <small class="text-muted">{{ activity.timestamp }}</small>
+                            </div>
+                            {% endfor %}
+                        {% else %}
+                            <div class="list-group-item text-muted">No recent activity</div>
+                        {% endif %}
                     </div>
                 </div>
             </div>
@@ -307,21 +338,10 @@
         }, 5000);
     }
 
-    // Update stats periodically
-    function updateStats() {
-        // This would typically fetch real stats from the backend
-        document.getElementById('totalChecks').textContent = 
-            Math.floor(Math.random() * 1000);
-        document.getElementById('maliciousIPs').textContent = 
-            Math.floor(Math.random() * 100);
-        document.getElementById('totalReports').textContent = 
-            Math.floor(Math.random() * 500);
-    }
-
-    // Initial stats update
-    updateStats();
-    
-    // Update stats every 30 seconds
-    setInterval(updateStats, 30000);
+    // Enable Bootstrap tooltips
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltipTriggerList.forEach(function (tooltipTriggerEl) {
+        new bootstrap.Tooltip(tooltipTriggerEl);
+    });
 </script>
 {% endblock %}

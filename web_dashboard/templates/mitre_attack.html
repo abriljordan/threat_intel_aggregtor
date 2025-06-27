@@ -1,0 +1,457 @@
+{% extends "base.html" %}
+
+{% block title %}MITRE ATT&CK Framework{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <h1 class="h3 mb-4">
+                <i class="fas fa-chess-board text-primary"></i>
+                MITRE ATT&CK Framework
+            </h1>
+        </div>
+    </div>
+
+    <!-- Search Section -->
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-search text-info"></i>
+                        Search ATT&CK Techniques
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form id="technique-search-form">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <input type="text" class="form-control" id="technique-search-query" placeholder="Search techniques by name or description...">
+                            </div>
+                            <div class="col-md-4">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-search"></i> Search
+                                </button>
+                                <button type="button" class="btn btn-secondary" onclick="loadAllTechniques()">
+                                    <i class="fas fa-list"></i> Show All
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-info-circle text-success"></i>
+                        Framework Info
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <p><strong>MITRE ATT&CK</strong> is a knowledge base of adversary tactics and techniques based on real-world observations.</p>
+                    <p><strong>Enterprise ATT&CK</strong> covers techniques used against Windows, Linux, and macOS systems.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ATT&CK Matrix Visualization -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-table text-warning"></i>
+                        ATT&CK Matrix Overview
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div id="attack-matrix-chart" style="height: 400px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tactics and Techniques Section -->
+    <div class="row">
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-sitemap text-primary"></i>
+                        Tactics
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div id="tactics-list">
+                        <p class="text-muted text-center">Loading tactics...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-tools text-info"></i>
+                        Techniques
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div id="techniques-list">
+                        <p class="text-muted text-center">Select a tactic or search for techniques</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Technique Details Modal -->
+    <div class="modal fade" id="techniqueModal" tabindex="-1" role="dialog">
+        <div class="modal-dialog modal-lg" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="fas fa-tools"></i>
+                        <span id="technique-modal-title">Technique Details</span>
+                    </h5>
+                    <button type="button" class="close" data-dismiss="modal">
+                        <span>&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div id="technique-details">
+                        <p class="text-muted">Loading technique details...</p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <a id="technique-mitre-link" href="#" target="_blank" class="btn btn-primary">
+                        <i class="fas fa-external-link-alt"></i> View on MITRE ATT&CK
+                    </a>
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Spinner -->
+    <div id="loading-spinner" class="text-center" style="display: none;">
+        <div class="spinner-border text-primary" role="status">
+            <span class="sr-only">Loading...</span>
+        </div>
+        <p class="mt-2">Loading ATT&CK data...</p>
+    </div>
+
+    <!-- Error Modal -->
+    <div class="modal fade" id="errorModal" tabindex="-1" role="dialog">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title text-danger">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        Error
+                    </h5>
+                    <button type="button" class="close" data-dismiss="modal">
+                        <span>&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <p id="error-message"></p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+<script>
+$(document).ready(function() {
+    // Load ATT&CK data on page load
+    loadAttackMatrix();
+    loadTactics();
+    
+    // Search form submission
+    $('#technique-search-form').on('submit', function(e) {
+        e.preventDefault();
+        searchTechniques();
+    });
+});
+
+function loadAttackMatrix() {
+    $('#loading-spinner').show();
+    
+    $.ajax({
+        url: '/threat-intel/mitre-attack/matrix',
+        method: 'GET',
+        success: function(data) {
+            $('#loading-spinner').hide();
+            if (data.error) {
+                showError(data.error);
+                return;
+            }
+            renderAttackMatrix(data);
+        },
+        error: function(xhr, status, error) {
+            $('#loading-spinner').hide();
+            showError('Failed to load ATT&CK matrix: ' + error);
+        }
+    });
+}
+
+function renderAttackMatrix(matrixData) {
+    // Create a simple matrix visualization
+    const tactics = Object.keys(matrixData);
+    const techniqueCounts = tactics.map(tactic => {
+        const techniques = matrixData[tactic]?.techniques || [];
+        return techniques.length;
+    });
+    
+    const data = [{
+        x: tactics,
+        y: techniqueCounts,
+        type: 'bar',
+        marker: {
+            color: 'rgba(52, 152, 219, 0.8)'
+        }
+    }];
+    
+    const layout = {
+        title: 'ATT&CK Matrix - Techniques per Tactic',
+        xaxis: {
+            title: 'Tactics',
+            tickangle: 45
+        },
+        yaxis: {
+            title: 'Number of Techniques'
+        },
+        height: 400
+    };
+    
+    Plotly.newPlot('attack-matrix-chart', data, layout);
+}
+
+function loadTactics() {
+    $.ajax({
+        url: '/threat-intel/mitre-attack/tactics',
+        method: 'GET',
+        success: function(data) {
+            if (data.error) {
+                showError(data.error);
+                return;
+            }
+            displayTactics(data.tactics || []);
+        },
+        error: function(xhr, status, error) {
+            showError('Failed to load tactics: ' + error);
+        }
+    });
+}
+
+function displayTactics(tactics) {
+    const tacticsDiv = $('#tactics-list');
+    
+    if (tactics.length === 0) {
+        tacticsDiv.html('<p class="text-muted">No tactics available</p>');
+        return;
+    }
+    
+    let html = '<div class="list-group">';
+    tactics.forEach(tactic => {
+        html += `
+            <a href="#" class="list-group-item list-group-item-action" onclick="loadTechniquesByTactic('${tactic.id}')">
+                <h6 class="mb-1">${tactic.id}</h6>
+                <p class="mb-1">${tactic.name}</p>
+                <small class="text-muted">${tactic.description || 'No description'}</small>
+            </a>
+        `;
+    });
+    html += '</div>';
+    
+    tacticsDiv.html(html);
+}
+
+function loadTechniquesByTactic(tacticId) {
+    $('#loading-spinner').show();
+    
+    $.ajax({
+        url: `/threat-intel/mitre-attack/techniques?tactic=${tacticId}`,
+        method: 'GET',
+        success: function(data) {
+            $('#loading-spinner').hide();
+            if (data.error) {
+                showError(data.error);
+                return;
+            }
+            displayTechniques(data.techniques || []);
+        },
+        error: function(xhr, status, error) {
+            $('#loading-spinner').hide();
+            showError('Failed to load techniques: ' + error);
+        }
+    });
+}
+
+function searchTechniques() {
+    const query = $('#technique-search-query').val();
+    
+    if (!query.trim()) {
+        loadAllTechniques();
+        return;
+    }
+    
+    $('#loading-spinner').show();
+    
+    $.ajax({
+        url: `/threat-intel/mitre-attack/techniques?query=${encodeURIComponent(query)}`,
+        method: 'GET',
+        success: function(data) {
+            $('#loading-spinner').hide();
+            if (data.error) {
+                showError(data.error);
+                return;
+            }
+            displayTechniques(data.techniques || []);
+        },
+        error: function(xhr, status, error) {
+            $('#loading-spinner').hide();
+            showError('Search failed: ' + error);
+        }
+    });
+}
+
+function loadAllTechniques() {
+    $('#loading-spinner').show();
+    
+    $.ajax({
+        url: '/threat-intel/mitre-attack/techniques',
+        method: 'GET',
+        success: function(data) {
+            $('#loading-spinner').hide();
+            if (data.error) {
+                showError(data.error);
+                return;
+            }
+            displayTechniques(data.techniques || []);
+        },
+        error: function(xhr, status, error) {
+            $('#loading-spinner').hide();
+            showError('Failed to load techniques: ' + error);
+        }
+    });
+}
+
+function displayTechniques(techniques) {
+    const techniquesDiv = $('#techniques-list');
+    
+    if (techniques.length === 0) {
+        techniquesDiv.html('<p class="text-muted text-center">No techniques found</p>');
+        return;
+    }
+    
+    let html = '<div class="row">';
+    techniques.forEach(technique => {
+        html += `
+            <div class="col-md-6 mb-3">
+                <div class="card">
+                    <div class="card-body">
+                        <h6 class="card-title">
+                            <a href="#" onclick="showTechniqueDetails('${technique.id}')" class="text-decoration-none">
+                                ${technique.id}: ${technique.name}
+                            </a>
+                        </h6>
+                        <p class="card-text">${technique.description ? technique.description.substring(0, 150) + '...' : 'No description available'}</p>
+                        <small class="text-muted">
+                            <strong>Tactic:</strong> ${technique.tactic || 'Unknown'}
+                        </small>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    html += '</div>';
+    
+    techniquesDiv.html(html);
+}
+
+function showTechniqueDetails(techniqueId) {
+    $('#loading-spinner').show();
+    
+    $.ajax({
+        url: `/threat-intel/mitre-attack/techniques/${techniqueId}`,
+        method: 'GET',
+        success: function(technique) {
+            $('#loading-spinner').hide();
+            if (technique.error) {
+                showError(technique.error);
+                return;
+            }
+            displayTechniqueDetails(technique);
+        },
+        error: function(xhr, status, error) {
+            $('#loading-spinner').hide();
+            showError('Failed to load technique details: ' + error);
+        }
+    });
+}
+
+function displayTechniqueDetails(technique) {
+    $('#technique-modal-title').text(`${technique.id}: ${technique.name}`);
+    $('#technique-mitre-link').attr('href', technique.url || '#');
+    
+    const detailsHtml = `
+        <div class="row">
+            <div class="col-md-8">
+                <h6>Description</h6>
+                <p>${technique.description || 'No description available'}</p>
+                
+                <h6>Tactic</h6>
+                <p>${technique.tactic || 'Unknown'}</p>
+                
+                ${technique.platforms ? `
+                    <h6>Platforms</h6>
+                    <p>${technique.platforms.join(', ')}</p>
+                ` : ''}
+                
+                ${technique.permissions_required ? `
+                    <h6>Permissions Required</h6>
+                    <p>${technique.permissions_required.join(', ')}</p>
+                ` : ''}
+                
+                ${technique.data_sources ? `
+                    <h6>Data Sources</h6>
+                    <p>${technique.data_sources.join(', ')}</p>
+                ` : ''}
+            </div>
+            <div class="col-md-4">
+                <div class="card bg-light">
+                    <div class="card-body">
+                        <h6>Technique Information</h6>
+                        <ul class="list-unstyled">
+                            <li><strong>ID:</strong> ${technique.id}</li>
+                            <li><strong>Name:</strong> ${technique.name}</li>
+                            <li><strong>Tactic:</strong> ${technique.tactic || 'Unknown'}</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    $('#technique-details').html(detailsHtml);
+    $('#techniqueModal').modal('show');
+}
+
+function showError(message) {
+    $('#error-message').text(message);
+    $('#errorModal').modal('show');
+}
+</script>
+{% endblock %} 

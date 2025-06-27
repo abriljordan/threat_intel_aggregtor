@@ -168,15 +168,45 @@
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a class="nav-link {% if request.endpoint == 'main.advanced_dashboard_page' %}active{% endif %}" 
+                               href="{{ url_for('main.advanced_dashboard_page') }}">
+                                <i class="fas fa-chart-bar"></i>Advanced Dashboard
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a class="nav-link {% if request.endpoint == 'main.search' %}active{% endif %}" 
                                href="{{ url_for('main.search') }}">
                                 <i class="fas fa-search"></i>Search
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a class="nav-link {% if request.endpoint == 'main.threat_intelligence' %}active{% endif %}" 
+                               href="{{ url_for('main.threat_intelligence') }}">
+                                <i class="fas fa-shield-alt"></i>Threat Intelligence
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.endpoint == 'main.security_news' %}active{% endif %}" 
+                               href="{{ url_for('main.security_news') }}">
+                                <i class="fas fa-newspaper"></i>Security News
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.endpoint == 'main.mitre_attack_page' %}active{% endif %}" 
+                               href="{{ url_for('main.mitre_attack_page') }}">
+                                <i class="fas fa-chess-board"></i>MITRE ATT&CK
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a class="nav-link {% if request.endpoint == 'main.reports' %}active{% endif %}" 
                                href="{{ url_for('main.reports') }}">
                                 <i class="fas fa-file-alt"></i>Reports
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.endpoint == 'main.network_monitoring' %}active{% endif %}" 
+                               href="{{ url_for('main.network_monitoring') }}">
+                                <i class="fas fa-network-wired"></i>Network Monitoring
                             </a>
                         </li>
                     </ul>
@@ -211,5 +241,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     
     {% block extra_js %}{% endblock %}
+    {% block scripts %}{% endblock %}
+
 </body>
 </html> 

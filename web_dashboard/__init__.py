@@ -34,12 +34,14 @@ def create_app():
     from . import models
     
     # Import blueprints
-    from web_dashboard.routes import main, auth, api
+    from web_dashboard.routes import main, auth, api, network, threat_intel
     
     # Register blueprints
     app.register_blueprint(main)
     app.register_blueprint(auth)
     app.register_blueprint(api)
+    app.register_blueprint(network)
+    app.register_blueprint(threat_intel)
     
     # Create database tables
     with app.app_context():

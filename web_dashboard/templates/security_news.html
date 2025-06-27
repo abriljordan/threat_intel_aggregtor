@@ -1,0 +1,343 @@
+{% extends "base.html" %}
+
+{% block title %}Security News - RSS Feeds{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <h1 class="h3 mb-4">
+                <i class="fas fa-newspaper text-primary"></i>
+                Security News & Threat Intelligence
+            </h1>
+        </div>
+    </div>
+
+    <!-- Search and Filter Section -->
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-search text-info"></i>
+                        Search Security News
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form id="news-search-form">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <input type="text" class="form-control" id="news-search-query" placeholder="Search articles...">
+                            </div>
+                            <div class="col-md-3">
+                                <select class="form-select" id="news-category-filter">
+                                    <option value="">All Categories</option>
+                                    <option value="malware">Malware</option>
+                                    <option value="apt">APT</option>
+                                    <option value="vulnerability">Vulnerability</option>
+                                    <option value="ioc">IOC</option>
+                                    <option value="data_breach">Data Breach</option>
+                                    <option value="ransomware">Ransomware</option>
+                                    <option value="phishing">Phishing</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-search"></i> Search
+                                </button>
+                                <button type="button" class="btn btn-secondary" onclick="loadLatestNews()">
+                                    <i class="fas fa-refresh"></i> Refresh
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-chart-pie text-success"></i>
+                        News Statistics
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row text-center">
+                        <div class="col-6">
+                            <h4 id="total-articles">0</h4>
+                            <small>Total Articles</small>
+                        </div>
+                        <div class="col-6">
+                            <h4 id="high-threat-articles">0</h4>
+                            <small>High Threat</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- News Articles Section -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-list text-warning"></i>
+                        Latest Security News
+                    </h5>
+                    <div>
+                        <span class="badge bg-primary" id="articles-count">0</span> articles
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div id="news-articles">
+                        <p class="text-muted text-center">Loading security news...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Threat Intelligence Dashboard -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-chart-bar text-info"></i>
+                        News Analytics Dashboard
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div id="news-dashboard-charts">
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div id="news-timeline-chart" style="height: 300px;"></div>
+                            </div>
+                            <div class="col-md-4">
+                                <div id="news-categories-chart" style="height: 300px;"></div>
+                            </div>
+                            <div class="col-md-4">
+                                <div id="news-sources-chart" style="height: 300px;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Loading Spinner -->
+<div id="loading-spinner" class="text-center" style="display: none;">
+    <div class="spinner-border text-primary" role="status">
+        <span class="sr-only">Loading...</span>
+    </div>
+    <p class="mt-2">Loading security news...</p>
+</div>
+
+<!-- Error Modal -->
+<div class="modal fade" id="errorModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title text-danger">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    Error
+                </h5>
+                <button type="button" class="close" data-dismiss="modal">
+                    <span>&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p id="error-message"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+<script>
+$(document).ready(function() {
+    // Load latest news on page load
+    loadLatestNews();
+    loadNewsDashboard();
+    
+    // Search form submission
+    $('#news-search-form').on('submit', function(e) {
+        e.preventDefault();
+        searchNews();
+    });
+    
+    // Auto-refresh every 10 minutes
+    setInterval(loadLatestNews, 600000);
+});
+
+function loadLatestNews() {
+    $('#loading-spinner').show();
+    
+    $.ajax({
+        url: '/threat-intel/security-news',
+        method: 'GET',
+        data: {
+            limit: 50
+        },
+        success: function(data) {
+            $('#loading-spinner').hide();
+            displayNewsArticles(data.articles || []);
+            updateStatistics(data.articles || []);
+        },
+        error: function(xhr, status, error) {
+            $('#loading-spinner').hide();
+            showError('Failed to load security news: ' + error);
+        }
+    });
+}
+
+function searchNews() {
+    const query = $('#news-search-query').val();
+    const category = $('#news-category-filter').val();
+    
+    if (!query.trim() && !category) {
+        loadLatestNews();
+        return;
+    }
+    
+    $('#loading-spinner').show();
+    
+    let url = '/threat-intel/security-news/search';
+    let params = {};
+    
+    if (query.trim()) {
+        params.query = query;
+    }
+    if (category) {
+        params.category = category;
+    }
+    
+    $.ajax({
+        url: url,
+        method: 'GET',
+        data: params,
+        success: function(data) {
+            $('#loading-spinner').hide();
+            displayNewsArticles(data.articles || []);
+            updateStatistics(data.articles || []);
+        },
+        error: function(xhr, status, error) {
+            $('#loading-spinner').hide();
+            showError('Search failed: ' + error);
+        }
+    });
+}
+
+function displayNewsArticles(articles) {
+    const articlesDiv = $('#news-articles');
+    const count = articles.length;
+    
+    $('#articles-count').text(count);
+    
+    if (count === 0) {
+        articlesDiv.html('<p class="text-muted text-center">No articles found</p>');
+        return;
+    }
+    
+    let html = '';
+    articles.forEach(article => {
+        const threatScore = article.threat_intelligence ? article.threat_intelligence.threat_score : 0;
+        const threatClass = threatScore >= 70 ? 'danger' : threatScore >= 40 ? 'warning' : 'info';
+        
+        html += `
+            <div class="card mb-3">
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-8">
+                            <h5 class="card-title">
+                                <a href="${article.url}" target="_blank" class="text-decoration-none">
+                                    ${article.title}
+                                </a>
+                            </h5>
+                            <p class="card-text">${article.summary || article.content.substring(0, 200)}...</p>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <small class="text-muted">
+                                    <i class="fas fa-calendar"></i> ${article.published_date}
+                                    <i class="fas fa-newspaper ml-2"></i> ${article.source}
+                                </small>
+                                <span class="badge bg-${threatClass}">Threat Score: ${threatScore}</span>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <h6>Threat Intelligence:</h6>
+                            ${article.threat_intelligence ? `
+                                <ul class="list-unstyled">
+                                    <li><strong>Keywords:</strong> ${article.threat_intelligence.keywords_found.join(', ') || 'None'}</li>
+                                    <li><strong>Malware:</strong> ${article.threat_intelligence.malware_mentioned.join(', ') || 'None'}</li>
+                                    <li><strong>Threat Actors:</strong> ${article.threat_intelligence.threat_actors_mentioned.join(', ') || 'None'}</li>
+                                    <li><strong>Categories:</strong> ${article.threat_intelligence.categories.join(', ') || 'None'}</li>
+                                </ul>
+                            ` : '<p class="text-muted">No threat intelligence data</p>'}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    
+    articlesDiv.html(html);
+}
+
+function updateStatistics(articles) {
+    $('#total-articles').text(articles.length);
+    
+    const highThreatCount = articles.filter(article => 
+        article.threat_intelligence && article.threat_intelligence.threat_score >= 70
+    ).length;
+    
+    $('#high-threat-articles').text(highThreatCount);
+}
+
+function loadNewsDashboard() {
+    $.ajax({
+        url: '/threat-intel/security-news/dashboard',
+        method: 'GET',
+        success: function(data) {
+            if (data.charts) {
+                renderNewsCharts(data.charts);
+            }
+        },
+        error: function(xhr, status, error) {
+            console.error('Error loading news dashboard:', error);
+        }
+    });
+}
+
+function renderNewsCharts(charts) {
+    // News Timeline Chart
+    if (charts.news_timeline) {
+        Plotly.newPlot('news-timeline-chart', charts.news_timeline.data, charts.news_timeline.layout);
+    }
+    
+    // News Categories Chart
+    if (charts.news_categories) {
+        Plotly.newPlot('news-categories-chart', charts.news_categories.data, charts.news_categories.layout);
+    }
+    
+    // News Sources Chart
+    if (charts.news_sources) {
+        Plotly.newPlot('news-sources-chart', charts.news_sources.data, charts.news_sources.layout);
+    }
+}
+
+function showError(message) {
+    $('#error-message').text(message);
+    $('#errorModal').modal('show');
+}
+</script>
+{% endblock %} 

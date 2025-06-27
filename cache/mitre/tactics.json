@@ -1,0 +1,14 @@
+{
+  "TA0001": {
+    "id": "TA0001",
+    "name": "Initial Access",
+    "description": "The adversary is trying to get into your network.",
+    "url": "https://attack.mitre.org/tactics/TA0001"
+  },
+  "TA0002": {
+    "id": "TA0002",
+    "name": "Execution",
+    "description": "The adversary is trying to run malicious code.",
+    "url": "https://attack.mitre.org/tactics/TA0002"
+  }
+}

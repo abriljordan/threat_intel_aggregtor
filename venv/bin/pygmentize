@@ -1,4 +1,4 @@
-#!/Users/abriljordancasinillo/Desktop/github-projects/portfolio-projects/threat_intel_aggregtor/venv/bin/python
+#!/Users/ajcasinillo/Desktop/github-projects/portfolio-projects/threat_intel_aggregtor/venv/bin/python
 # -*- coding: utf-8 -*-
 import re
 import sys

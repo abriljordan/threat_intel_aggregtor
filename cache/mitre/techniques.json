@@ -1,0 +1,40 @@
+{
+  "T1055": {
+    "id": "T1055",
+    "name": "Process Injection",
+    "description": "Adversaries may inject code into processes to evade process-based defenses.",
+    "tactic": "defense-evasion",
+    "url": "https://attack.mitre.org/techniques/T1055",
+    "platforms": [
+      "Windows",
+      "Linux",
+      "macOS"
+    ],
+    "permissions_required": [
+      "User",
+      "Administrator"
+    ],
+    "data_sources": [
+      "Process monitoring",
+      "API monitoring"
+    ]
+  },
+  "T1071": {
+    "id": "T1071",
+    "name": "Application Layer Protocol",
+    "description": "Adversaries may communicate using application layer protocols.",
+    "tactic": "command-and-control",
+    "url": "https://attack.mitre.org/techniques/T1071",
+    "platforms": [
+      "Windows",
+      "Linux",
+      "macOS"
+    ],
+    "permissions_required": [
+      "User"
+    ],
+    "data_sources": [
+      "Network traffic analysis"
+    ]
+  }
+}

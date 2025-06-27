@@ -1,0 +1,342 @@
+{% extends "base.html" %}
+
+{% block title %}Threat Intelligence - Search & Correlation{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <h1 class="h3 mb-4">
+                <i class="fas fa-shield-alt text-primary"></i>
+                Threat Intelligence Search & Correlation
+            </h1>
+        </div>
+    </div>
+
+    <!-- Search Section -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-search text-info"></i>
+                        Search Threat Intelligence
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form id="search-form">
+                        <div class="mb-3">
+                            <label for="search-type" class="form-label">Search Type</label>
+                            <select class="form-select" id="search-type">
+                                <option value="threat-actors">Threat Actors</option>
+                                <option value="malware-families">Malware Families</option>
+                                <option value="mitre-techniques">MITRE ATT&CK Techniques</option>
+                                <option value="observables">Observables (IOCs)</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="search-query" class="form-label">Search Query</label>
+                            <input type="text" class="form-control" id="search-query" placeholder="Enter search term...">
+                        </div>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-search"></i> Search
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-link text-success"></i>
+                        Correlate Observable
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form id="correlation-form">
+                        <div class="mb-3">
+                            <label for="observable-type" class="form-label">Observable Type</label>
+                            <select class="form-select" id="observable-type">
+                                <option value="ip">IP Address</option>
+                                <option value="domain">Domain</option>
+                                <option value="url">URL</option>
+                                <option value="hash">File Hash</option>
+                                <option value="email">Email Address</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="observable-value" class="form-label">Observable Value</label>
+                            <input type="text" class="form-control" id="observable-value" placeholder="Enter observable value...">
+                        </div>
+                        <button type="submit" class="btn btn-success">
+                            <i class="fas fa-link"></i> Correlate
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Results Section -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-list text-warning"></i>
+                        Search Results
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div id="search-results">
+                        <p class="text-muted text-center">Enter a search query to see results</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistics Section -->
+    <div class="row mt-4">
+        <div class="col-md-3">
+            <div class="card bg-primary text-white">
+                <div class="card-body text-center">
+                    <h4 id="threat-actors-count">0</h4>
+                    <p class="mb-0">Threat Actors</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-warning text-white">
+                <div class="card-body text-center">
+                    <h4 id="malware-count">0</h4>
+                    <p class="mb-0">Malware Families</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-info text-white">
+                <div class="card-body text-center">
+                    <h4 id="vulnerabilities-count">0</h4>
+                    <p class="mb-0">Vulnerabilities</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-success text-white">
+                <div class="card-body text-center">
+                    <h4 id="observables-count">0</h4>
+                    <p class="mb-0">Observables</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Loading Spinner -->
+<div id="loading-spinner" class="text-center" style="display: none;">
+    <div class="spinner-border text-primary" role="status">
+        <span class="sr-only">Loading...</span>
+    </div>
+    <p class="mt-2">Searching threat intelligence...</p>
+</div>
+
+<!-- Error Modal -->
+<div class="modal fade" id="errorModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title text-danger">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    Error
+                </h5>
+                <button type="button" class="close" data-dismiss="modal">
+                    <span>&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p id="error-message"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    // Load statistics on page load
+    loadStatistics();
+    
+    // Search form submission
+    $('#search-form').on('submit', function(e) {
+        e.preventDefault();
+        performSearch();
+    });
+    
+    // Correlation form submission
+    $('#correlation-form').on('submit', function(e) {
+        e.preventDefault();
+        correlateObservable();
+    });
+});
+
+function loadStatistics() {
+    $.ajax({
+        url: '/threat-intel/statistics',
+        method: 'GET',
+        success: function(data) {
+            $('#threat-actors-count').text(data.threat_actors || 0);
+            $('#malware-count').text(data.malware_families || 0);
+            $('#vulnerabilities-count').text(data.vulnerabilities || 0);
+            $('#observables-count').text(data.observables || 0);
+        },
+        error: function(xhr, status, error) {
+            console.error('Error loading statistics:', error);
+        }
+    });
+}
+
+function performSearch() {
+    const searchType = $('#search-type').val();
+    const query = $('#search-query').val();
+    
+    if (!query.trim()) {
+        showError('Please enter a search query');
+        return;
+    }
+    
+    $('#loading-spinner').show();
+    
+    let url = '';
+    switch(searchType) {
+        case 'threat-actors':
+            url = `/threat-intel/threat-actors?query=${encodeURIComponent(query)}`;
+            break;
+        case 'malware-families':
+            url = `/threat-intel/malware-families?query=${encodeURIComponent(query)}`;
+            break;
+        case 'mitre-techniques':
+            url = `/threat-intel/mitre-attack/techniques?query=${encodeURIComponent(query)}`;
+            break;
+        case 'observables':
+            url = `/threat-intel/observables?query=${encodeURIComponent(query)}`;
+            break;
+    }
+    
+    $.ajax({
+        url: url,
+        method: 'GET',
+        success: function(data) {
+            $('#loading-spinner').hide();
+            displaySearchResults(data, searchType);
+        },
+        error: function(xhr, status, error) {
+            $('#loading-spinner').hide();
+            showError('Search failed: ' + error);
+        }
+    });
+}
+
+function correlateObservable() {
+    const type = $('#observable-type').val();
+    const value = $('#observable-value').val();
+    
+    if (!value.trim()) {
+        showError('Please enter an observable value');
+        return;
+    }
+    
+    $('#loading-spinner').show();
+    
+    $.ajax({
+        url: '/threat-intel/observables/correlate',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({
+            type: type,
+            value: value
+        }),
+        success: function(data) {
+            $('#loading-spinner').hide();
+            displayCorrelationResults(data);
+        },
+        error: function(xhr, status, error) {
+            $('#loading-spinner').hide();
+            showError('Correlation failed: ' + error);
+        }
+    });
+}
+
+function displaySearchResults(data, searchType) {
+    const resultsDiv = $('#search-results');
+    let html = '<h6>Search Results</h6>';
+    
+    if (data.error) {
+        html += `<div class="alert alert-warning">${data.error}</div>`;
+    } else {
+        const items = data[searchType.replace('-', '_')] || data.techniques || [];
+        
+        if (items.length === 0) {
+            html += '<p class="text-muted">No results found</p>';
+        } else {
+            html += '<div class="list-group">';
+            items.forEach(item => {
+                html += `
+                    <div class="list-group-item">
+                        <h6 class="mb-1">${item.name || item.id}</h6>
+                        <p class="mb-1">${item.description || 'No description available'}</p>
+                        ${item.url ? `<small><a href="${item.url}" target="_blank">View Details</a></small>` : ''}
+                    </div>
+                `;
+            });
+            html += '</div>';
+        }
+    }
+    
+    resultsDiv.html(html);
+}
+
+function displayCorrelationResults(data) {
+    const resultsDiv = $('#search-results');
+    let html = '<h6>Correlation Results</h6>';
+    
+    if (data.error) {
+        html += `<div class="alert alert-warning">${data.error}</div>`;
+    } else {
+        html += `
+            <div class="row">
+                <div class="col-md-6">
+                    <h6>Matches Found: ${data.matches ? data.matches.length : 0}</h6>
+                    <p>Confidence: ${data.confidence || 0}%</p>
+                    <p>Threat Score: ${data.threat_score || 0}/100</p>
+                </div>
+                <div class="col-md-6">
+                    <h6>Related Threat Actors: ${data.threat_actors ? data.threat_actors.length : 0}</h6>
+                    <h6>Related Malware: ${data.malware_families ? data.malware_families.length : 0}</h6>
+                </div>
+            </div>
+        `;
+        
+        if (data.threat_actors && data.threat_actors.length > 0) {
+            html += '<h6>Related Threat Actors:</h6><ul>';
+            data.threat_actors.forEach(actor => {
+                html += `<li>${actor.name} - ${actor.description || 'No description'}</li>`;
+            });
+            html += '</ul>';
+        }
+    }
+    
+    resultsDiv.html(html);
+}
+
+function showError(message) {
+    $('#error-message').text(message);
+    $('#errorModal').modal('show');
+}
+</script>
+{% endblock %} 

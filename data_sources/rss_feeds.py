@@ -9,7 +9,7 @@ import feedparser
 import requests
 import logging
 from typing import Dict, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import re
 import json
 from bs4 import BeautifulSoup
@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 
 class RSSFeedProcessor:
     """Process RSS feeds for security news and threat intelligence."""
+    
+    CACHE_TTL_SECONDS = 300  # 5 minutes
     
     def __init__(self):
         """Initialize RSS feed processor."""
@@ -77,11 +79,24 @@ class RSSFeedProcessor:
         ]
         
         logger.info("RSS Feed Processor initialized successfully")
+        # Caching attributes
+        self._news_cache = None
+        self._news_cache_time = 0
+        self._cache_lock = threading.Lock()
     
-    def process_security_news(self, max_age_hours: int = 24) -> List[Dict]:
-        """Process security news from RSS feeds."""
-        all_articles = []
+    def process_security_news(self, max_age_hours: int = 24, use_cache: bool = True) -> List[Dict]:
+        """Process security news from RSS feeds, with caching."""
+        now = time.time()
+        if use_cache:
+            with self._cache_lock:
+                if (
+                    self._news_cache is not None and
+                    now - self._news_cache_time < self.CACHE_TTL_SECONDS
+                ):
+                    logger.debug("Returning cached security news articles.")
+                    return self._news_cache
         
+        all_articles = []
         for feed_id, feed_config in self.feeds.items():
             if not feed_config['enabled']:
                 continue
@@ -97,6 +112,12 @@ class RSSFeedProcessor:
         # Sort by publication date
         all_articles.sort(key=lambda x: x.get('published_date', ''), reverse=True)
         
+        # Update cache
+        if use_cache:
+            with self._cache_lock:
+                self._news_cache = all_articles
+                self._news_cache_time = now
+        
         return all_articles
     
     def _process_feed(self, feed_config: Dict, max_age_hours: int) -> List[Dict]:
@@ -109,14 +130,19 @@ class RSSFeedProcessor:
                 logger.warning(f"Feed parsing error for {feed_config['name']}")
             
             articles = []
-            cutoff_time = datetime.now() - timedelta(hours=max_age_hours)
+            cutoff_time = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)  # Make aware
             
             for entry in feed.entries:
                 try:
                     # Parse publication date
                     pub_date = self._parse_date(entry.get('published', ''))
-                    if pub_date and pub_date < cutoff_time:
-                        continue
+                    if pub_date:
+                        if pub_date.tzinfo is None:
+                            pub_date = pub_date.replace(tzinfo=timezone.utc)
+                        else:
+                            pub_date = pub_date.astimezone(timezone.utc)
+                        if pub_date < cutoff_time:
+                            continue
                     
                     # Extract article content
                     article = self._extract_article_info(entry, feed_config)
@@ -140,7 +166,7 @@ class RSSFeedProcessor:
             return []
     
     def _parse_date(self, date_string: str) -> Optional[datetime]:
-        """Parse date string from RSS feed."""
+        """Parse date string from RSS feed and return a timezone-aware datetime (UTC) if possible."""
         try:
             # Try different date formats
             date_formats = [
@@ -153,14 +179,21 @@ class RSSFeedProcessor:
             
             for fmt in date_formats:
                 try:
-                    return datetime.strptime(date_string, fmt)
+                    dt = datetime.strptime(date_string, fmt)
+                    if fmt.endswith('%z') or fmt.endswith('%Z') or 'T' in fmt:
+                        # If parsed as aware, convert to UTC
+                        if dt.tzinfo is not None:
+                            return dt.astimezone(timezone.utc)
+                    # If parsed as naive, make aware (UTC)
+                    return dt.replace(tzinfo=timezone.utc)
                 except ValueError:
                     continue
             
             # If all formats fail, try feedparser's date parsing
             parsed = feedparser._parse_date(date_string)
             if parsed:
-                return datetime(*parsed[:6])
+                dt = datetime(*parsed[:6])
+                return dt.replace(tzinfo=timezone.utc)
             
         except Exception as e:
             logger.error(f"Error parsing date '{date_string}': {e}")
@@ -355,9 +388,15 @@ class RSSFeedProcessor:
         
         return list(set(categories))
     
-    def get_latest_articles(self, limit: int = 50) -> List[Dict]:
-        """Get latest security articles."""
-        return self.process_security_news(max_age_hours=24)[:limit]
+    def invalidate_news_cache(self):
+        """Invalidate the news cache (force refresh on next request)."""
+        with self._cache_lock:
+            self._news_cache = None
+            self._news_cache_time = 0
+    
+    def get_latest_articles(self, limit: int = 50, use_cache: bool = True) -> List[Dict]:
+        """Get latest security articles (cached)."""
+        return self.process_security_news(max_age_hours=24, use_cache=use_cache)[:limit]
     
     def get_articles_by_category(self, category: str, limit: int = 20) -> List[Dict]:
         """Get articles by category."""

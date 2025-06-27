@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from .models import User
 import glob
 import sqlite3
+from threat_intelligence.threat_repository import get_threat_repository, ThreatIntelligenceRepository
 
 # Add parent directory to path to import API clients
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -478,8 +479,6 @@ def get_threat_intelligence_dashboard():
 def collect_real_threat_data():
     """Collect real threat intelligence data from various sources."""
     from datetime import datetime, timedelta
-    import random
-    
     threat_data = {
         'overall_threat_score': 0,
         'threat_categories': {},
@@ -491,168 +490,104 @@ def collect_real_threat_data():
         'network_traffic': {},
         'process_monitoring': {}
     }
-    
     try:
         # 1. Get threat statistics from database
         if get_threat_repository:
             try:
                 threat_repo = get_threat_repository()
                 stats = threat_repo.get_threat_statistics()
-                
-                # Calculate overall threat score based on high-threat observables
                 total_observables = stats.get('observables', 0)
                 high_threat_observables = stats.get('high_threat_observables', 0)
-                
                 if total_observables > 0:
                     threat_data['overall_threat_score'] = min(100, int((high_threat_observables / total_observables) * 100))
                 else:
-                    threat_data['overall_threat_score'] = random.randint(30, 70)
-                    
+                    threat_data['overall_threat_score'] = 0
             except Exception as e:
                 print(f"Error getting threat repository data: {e}")
-                threat_data['overall_threat_score'] = random.randint(30, 70)
-        
+                threat_data['overall_threat_score'] = 0
         # 2. Get threat categories from recent alerts and reports
         threat_data['threat_categories'] = get_threat_categories_from_reports()
-        
         # 3. Get threat timeline from recent activity
         threat_data['threat_timeline'] = get_threat_timeline_data()
-        
         # 4. Get geographic threat data from observables
         threat_data['geo_threats'] = get_geographic_threat_data()
-        
         # 5. Get MITRE ATT&CK techniques from database
         threat_data['attack_techniques'] = get_attack_techniques_data()
-        
         # 6. Get threat actors from database
         threat_data['threat_actors'] = get_threat_actors_data()
-        
         # 7. Get malware families from database
         threat_data['malware_families'] = get_malware_families_data()
-        
         # 8. Get network traffic data from monitoring
         threat_data['network_traffic'] = get_network_traffic_data()
-        
         # 9. Get process monitoring data
         threat_data['process_monitoring'] = get_process_monitoring_data()
-        
     except Exception as e:
         print(f"Error collecting real threat data: {e}")
-        # Fallback to sample data if real data collection fails
-        threat_data = generate_sample_threat_data()
-    
+        # On error, return empty/zeroed data
+        threat_data = {
+            'overall_threat_score': 0,
+            'threat_categories': {},
+            'threat_timeline': [],
+            'geo_threats': {},
+            'attack_techniques': {},
+            'threat_actors': {},
+            'malware_families': {},
+            'network_traffic': {},
+            'process_monitoring': {}
+        }
     return threat_data
 
 def get_threat_categories_from_reports():
-    """Get threat categories from recent reports and alerts."""
     try:
-        # Query the database for actual threat categories from recent reports
-        db_path = 'instance/threat_intel.db'
-        if not os.path.exists(db_path):
-            return get_default_threat_categories()
-        
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        
-        # Query observables for threat categories
-        cursor.execute('''
-            SELECT category, COUNT(*) as count 
-            FROM observables 
-            WHERE category IS NOT NULL 
-            GROUP BY category 
-            ORDER BY count DESC
-        ''')
-        
-        results = cursor.fetchall()
-        conn.close()
-        
-        if results:
-            categories = {}
-            for category, count in results:
-                categories[category.title()] = count
-            return categories
-        else:
-            return get_default_threat_categories()
-            
+        repo = ThreatIntelligenceRepository()
+        session = repo.db
+        import json
+        categories = {}
+        observables = session.query(repo.Observable).all()
+        for obs in observables:
+            meta = json.loads(obs.meta) if obs.meta else {}
+            category = meta.get('category')
+            if category:
+                categories[category.title()] = categories.get(category.title(), 0) + 1
+        return dict(sorted(categories.items(), key=lambda x: x[1], reverse=True)) if categories else {}
     except Exception as e:
-        print(f"Error getting threat categories from database: {e}")
-        return get_default_threat_categories()
-
-def get_default_threat_categories():
-    """Return default threat categories when database is not available."""
-    return {
-        'Malware': 35,
-        'Phishing': 28,
-        'DDoS': 15,
-        'Data Breach': 12,
-        'APT': 8,
-        'Ransomware': 18,
-        'Insider Threat': 5,
-        'Other': 7
-    }
+        print(f"Error getting threat categories from repository: {e}")
+        return {}
 
 def get_threat_timeline_data():
-    """Get threat timeline data from recent activity."""
     try:
-        # Query the database for actual threat timeline data
-        db_path = 'instance/threat_intel.db'
-        if not os.path.exists(db_path):
-            return get_default_threat_timeline()
-        
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        
-        # Query observables for threat timeline data
-        cursor.execute('''
-            SELECT DATE(first_seen) as date, COUNT(*) as count, AVG(threat_score) as avg_score
-            FROM observables 
-            WHERE first_seen >= DATE('now', '-30 days')
-            GROUP BY DATE(first_seen)
-            ORDER BY date
-        ''')
-        
-        results = cursor.fetchall()
-        conn.close()
-        
-        if results:
-            timeline_data = []
-            for date, count, avg_score in results:
-                # Determine severity based on average threat score
+        repo = ThreatIntelligenceRepository()
+        session = repo.db
+        from sqlalchemy import func
+        from datetime import datetime, timedelta
+        cutoff = datetime.utcnow() - timedelta(days=30)
+        results = (
+            session.query(func.date(repo.Observable.first_seen), func.count(), func.avg(repo.Observable.threat_score))
+            .filter(repo.Observable.first_seen >= cutoff)
+            .group_by(func.date(repo.Observable.first_seen))
+            .order_by(func.date(repo.Observable.first_seen))
+            .all()
+        )
+        timeline_data = []
+        for date, count, avg_score in results:
+            if avg_score is not None:
                 if avg_score >= 80:
                     severity = 'High'
                 elif avg_score >= 50:
                     severity = 'Medium'
                 else:
                     severity = 'Low'
-                
-                timeline_data.append({
-                    'date': date,
-                    'threats': count,
-                    'severity': severity
-                })
-            return timeline_data
-        else:
-            return get_default_threat_timeline()
-            
+            else:
+                severity = 'No data'
+            timeline_data.append({
+                'date': str(date),
+                'threats': count,
+                'severity': severity
+            })
+        return timeline_data
     except Exception as e:
-        print(f"Error getting threat timeline from database: {e}")
-        return get_default_threat_timeline()
-
-def get_default_threat_timeline():
-    """Return default threat timeline when database is not available."""
-    from datetime import datetime, timedelta
-    import random
-    
-    timeline_data = []
-    for i in range(30):
-        date = datetime.now() - timedelta(days=29-i)
-        threat_count = random.randint(3, 15)
-        timeline_data.append({
-            'date': date.strftime('%Y-%m-%d'),
-            'threats': threat_count,
-            'severity': random.choice(['Low', 'Medium', 'High'])
-        })
-    return timeline_data
+        print(f"Error getting threat timeline from repository: {e}")
+        return []
 
 def get_geographic_threat_data():
     """Get geographic threat data from observables."""
@@ -737,99 +672,24 @@ def get_attack_techniques_data():
         return {}
 
 def get_threat_actors_data():
-    """Get threat actors data from database."""
     try:
-        # Query the database for actual threat actors
-        db_path = 'instance/threat_intel.db'
-        if not os.path.exists(db_path):
-            return get_default_threat_actors()
-        
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        
-        # Query threat actors with their threat scores
-        cursor.execute('''
-            SELECT name, threat_score 
-            FROM threat_actors 
-            ORDER BY threat_score DESC 
-            LIMIT 10
-        ''')
-        
-        results = cursor.fetchall()
-        conn.close()
-        
-        if results:
-            actors = {}
-            for name, score in results:
-                actors[name] = score
-            return actors
-        else:
-            return get_default_threat_actors()
-            
+        repo = ThreatIntelligenceRepository()
+        session = repo.db
+        actors = session.query(repo.ThreatActor).order_by(repo.ThreatActor.name).limit(10).all()
+        return {actor.name: 1 for actor in actors} if actors else {}
     except Exception as e:
-        print(f"Error getting threat actors from database: {e}")
-        return get_default_threat_actors()
-
-def get_default_threat_actors():
-    """Return default threat actors when database is not available."""
-    return {
-        'APT29 (Cozy Bear)': 18,
-        'APT28 (Fancy Bear)': 15,
-        'Lazarus Group': 22,
-        'Wizard Spider': 12,
-        'Cobalt Group': 10,
-        'DarkHydrus': 8,
-        'APT41': 14,
-        'APT40': 11
-    }
+        print(f"Error getting threat actors from repository: {e}")
+        return {}
 
 def get_malware_families_data():
-    """Get malware families data from database."""
     try:
-        # Query the database for actual malware families
-        db_path = 'instance/threat_intel.db'
-        if not os.path.exists(db_path):
-            return get_default_malware_families()
-        
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        
-        # Query malware families with their threat scores
-        cursor.execute('''
-            SELECT name, threat_score 
-            FROM malware_families 
-            ORDER BY threat_score DESC 
-            LIMIT 10
-        ''')
-        
-        results = cursor.fetchall()
-        conn.close()
-        
-        if results:
-            malware = {}
-            for name, score in results:
-                malware[name] = score
-            return malware
-        else:
-            return get_default_malware_families()
-            
+        repo = ThreatIntelligenceRepository()
+        session = repo.db
+        malware = session.query(repo.MalwareFamily).order_by(repo.MalwareFamily.name).limit(10).all()
+        return {m.name: 1 for m in malware} if malware else {}
     except Exception as e:
-        print(f"Error getting malware families from database: {e}")
-        return get_default_malware_families()
-
-def get_default_malware_families():
-    """Return default malware families when database is not available."""
-    return {
-        'Emotet': 32,
-        'TrickBot': 28,
-        'Ryuk': 20,
-        'Conti': 16,
-        'QakBot': 24,
-        'Revil': 12,
-        'LockBit': 18,
-        'BlackCat': 14,
-        'Other': 22
-    }
+        print(f"Error getting malware families from repository: {e}")
+        return {}
 
 def get_network_traffic_data():
     """Get network traffic data from monitoring."""
@@ -900,100 +760,6 @@ def get_default_process_monitoring():
         'Node.js': 4,
         'Docker': 3,
         'Other': 28
-    }
-
-def generate_sample_threat_data():
-    """Generate sample threat data as fallback."""
-    from datetime import datetime, timedelta
-    import random
-    
-    # Generate realistic threat timeline data
-    timeline_data = []
-    for i in range(30):
-        date = datetime.now() - timedelta(days=29-i)
-        timeline_data.append({
-            'date': date.strftime('%Y-%m-%d'),
-            'threats': random.randint(5, 25),
-            'severity': random.choice(['Low', 'Medium', 'High'])
-        })
-    
-    return {
-        'overall_threat_score': random.randint(45, 85),
-        'threat_categories': {
-            'Malware': random.randint(20, 40),
-            'Phishing': random.randint(15, 35),
-            'DDoS': random.randint(10, 25),
-            'Data Breach': random.randint(5, 20),
-            'APT': random.randint(8, 18),
-            'Ransomware': random.randint(12, 28),
-            'Insider Threat': random.randint(3, 15),
-            'Other': random.randint(5, 15)
-        },
-        'threat_timeline': timeline_data,
-        'geo_threats': {
-            'United States': random.randint(30, 50),
-            'China': random.randint(20, 35),
-            'Russia': random.randint(15, 30),
-            'North Korea': random.randint(5, 15),
-            'Iran': random.randint(8, 20),
-            'India': random.randint(10, 25),
-            'Brazil': random.randint(5, 18),
-            'Germany': random.randint(8, 22)
-        },
-        'attack_techniques': {
-            'Initial Access': random.randint(3, 8),
-            'Execution': random.randint(5, 12),
-            'Persistence': random.randint(2, 6),
-            'Privilege Escalation': random.randint(3, 8),
-            'Defense Evasion': random.randint(4, 10),
-            'Credential Access': random.randint(2, 7),
-            'Discovery': random.randint(5, 12),
-            'Lateral Movement': random.randint(2, 6),
-            'Collection': random.randint(3, 8),
-            'Command and Control': random.randint(4, 9),
-            'Exfiltration': random.randint(2, 6),
-            'Impact': random.randint(3, 8)
-        },
-        'threat_actors': {
-            'APT29 (Cozy Bear)': random.randint(10, 20),
-            'APT28 (Fancy Bear)': random.randint(8, 18),
-            'Lazarus Group': random.randint(12, 25),
-            'Wizard Spider': random.randint(6, 15),
-            'Cobalt Group': random.randint(5, 12),
-            'DarkHydrus': random.randint(3, 10),
-            'APT41': random.randint(7, 16),
-            'APT40': random.randint(4, 12)
-        },
-        'malware_families': {
-            'Emotet': random.randint(20, 35),
-            'TrickBot': random.randint(15, 30),
-            'Ryuk': random.randint(10, 25),
-            'Conti': random.randint(8, 20),
-            'QakBot': random.randint(12, 28),
-            'Revil': random.randint(6, 18),
-            'LockBit': random.randint(10, 22),
-            'BlackCat': random.randint(5, 15),
-            'Other': random.randint(8, 20)
-        },
-        'network_traffic': {
-            'HTTP': random.randint(35, 50),
-            'HTTPS': random.randint(30, 45),
-            'DNS': random.randint(10, 20),
-            'SSH': random.randint(3, 10),
-            'FTP': random.randint(2, 8),
-            'SMTP': random.randint(5, 15),
-            'Other': random.randint(3, 12)
-        },
-        'process_monitoring': {
-            'System': random.randint(25, 40),
-            'Chrome': random.randint(10, 20),
-            'Explorer': random.randint(8, 15),
-            'svchost': random.randint(5, 12),
-            'Python': random.randint(3, 10),
-            'Node.js': random.randint(2, 8),
-            'Docker': random.randint(1, 6),
-            'Other': random.randint(20, 35)
-        }
     }
 
 @threat_intel.route('/mitre-attack/techniques')

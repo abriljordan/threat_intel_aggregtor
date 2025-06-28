@@ -1,354 +1,412 @@
 """
 MITRE ATT&CK Framework Integration
 
-This module provides integration with the MITRE ATT&CK framework for
-mapping threat behaviors to known attack techniques and tactics.
+This module provides integration with the MITRE ATT&CK framework using
+the official mitreattack-python library for comprehensive threat intelligence.
 """
 
-import requests
 import json
 import logging
 from typing import Dict, List, Optional, Set
 from datetime import datetime
 import os
 import sys
+from mitreattack.stix20.MitreAttackData import MitreAttackData
 
 logger = logging.getLogger(__name__)
 
+try:
+    from mitreattack.stix20 import MitreAttackData
+    MITRE_AVAILABLE = True
+except ImportError:
+    MITRE_AVAILABLE = False
+    logger.warning("mitreattack-python library not available. Install with: pip install mitreattack-python")
+
 class MitreAttackIntegration:
-    """MITRE ATT&CK Framework integration for threat intelligence."""
+    """MITRE ATT&CK integration with persistent caching."""
     
     def __init__(self, cache_dir: str = "cache/mitre"):
-        """Initialize MITRE ATT&CK integration."""
+        """Initialize MITRE ATT&CK integration with caching."""
         self.cache_dir = cache_dir
+        self.cache_file = os.path.join(cache_dir, "processed_data.json")
+        self.mitre_data = None
         self.techniques = {}
         self.tactics = {}
-        self.relationships = {}
         self.threat_actors = {}
         self.malware = {}
+        self.relationships = {}
+        self._loaded = False
         
-        # Create cache directory
+        # Create cache directory if it doesn't exist
         os.makedirs(cache_dir, exist_ok=True)
         
-        # MITRE ATT&CK API endpoints
-        self.base_url = "https://attack.mitre.org/api/"
-        self.enterprise_url = "https://attack.mitre.org/api/enterprise/"
-        
-        # Load sample data immediately for fallback
-        self._load_sample_data()
-        
-        # Try to load or fetch ATT&CK data in background
-        try:
+        # Try to load from cache first, then from source if needed
+        if not self._load_from_cache():
             self._load_attack_data()
-        except Exception as e:
-            logger.warning(f"Could not load ATT&CK data: {e}. Using sample data.")
-            # Sample data is already loaded above
-    
-    def _load_attack_data(self):
-        """Load ATT&CK data from cache or fetch from API."""
-        try:
-            # Try to load from cache first
-            if self._load_from_cache():
-                logger.info("Loaded MITRE ATT&CK data from cache")
-                return
-            
-            # Fetch from API if cache is empty or outdated
-            logger.info("Fetching MITRE ATT&CK data from API...")
-            self._fetch_attack_data()
-            self._save_to_cache()
-            
-        except Exception as e:
-            logger.error(f"Error loading ATT&CK data: {e}")
-            # Load sample data as fallback
-            self._load_sample_data()
     
     def _load_from_cache(self) -> bool:
-        """Load ATT&CK data from cache files."""
+        """Load processed data from cache file."""
         try:
-            cache_files = [
-                'techniques.json',
-                'tactics.json', 
-                'relationships.json',
-                'threat_actors.json',
-                'malware.json'
-            ]
+            if not os.path.exists(self.cache_file):
+                print("      📁 No cache found, will load from source...")
+                return False
             
-            for filename in cache_files:
-                filepath = os.path.join(self.cache_dir, filename)
-                if not os.path.exists(filepath):
-                    return False
-                
-                with open(filepath, 'r') as f:
-                    data = json.load(f)
-                    
-                if filename == 'techniques.json':
-                    self.techniques = data
-                elif filename == 'tactics.json':
-                    self.tactics = data
-                elif filename == 'relationships.json':
-                    self.relationships = data
-                elif filename == 'threat_actors.json':
-                    self.threat_actors = data
-                elif filename == 'malware.json':
-                    self.malware = data
+            print("      📁 Loading MITRE ATT&CK data from cache...")
+            with open(self.cache_file, 'r') as f:
+                cached_data = json.load(f)
             
+            self.techniques = cached_data.get('techniques', {})
+            self.tactics = cached_data.get('tactics', {})
+            self.threat_actors = cached_data.get('threat_actors', {})
+            self.malware = cached_data.get('malware', {})
+            
+            print(f"      ✅ Loaded from cache: {len(self.techniques)} techniques, {len(self.tactics)} tactics, {len(self.threat_actors)} threat actors, {len(self.malware)} malware")
             return True
             
         except Exception as e:
-            logger.error(f"Error loading from cache: {e}")
+            print(f"      ⚠️  Cache loading failed: {e}")
             return False
     
     def _save_to_cache(self):
-        """Save ATT&CK data to cache files."""
+        """Save processed data to cache file."""
         try:
-            cache_data = [
-                (self.techniques, 'techniques.json'),
-                (self.tactics, 'tactics.json'),
-                (self.relationships, 'relationships.json'),
-                (self.threat_actors, 'threat_actors.json'),
-                (self.malware, 'malware.json')
-            ]
+            cache_data = {
+                'techniques': self.techniques,
+                'tactics': self.tactics,
+                'threat_actors': self.threat_actors,
+                'malware': self.malware,
+                'cache_timestamp': '2024-01-01T00:00:00Z'  # You could add actual timestamp
+            }
             
-            for data, filename in cache_data:
-                filepath = os.path.join(self.cache_dir, filename)
-                with open(filepath, 'w') as f:
-                    json.dump(data, f, indent=2)
-                    
+            with open(self.cache_file, 'w') as f:
+                json.dump(cache_data, f, indent=2)
+            
+            print(f"      💾 Saved to cache: {len(self.techniques)} techniques, {len(self.tactics)} tactics, {len(self.threat_actors)} threat actors, {len(self.malware)} malware")
+            
         except Exception as e:
-            logger.error(f"Error saving to cache: {e}")
+            print(f"      ⚠️  Cache saving failed: {e}")
     
-    def _fetch_attack_data(self):
-        """Fetch ATT&CK data from MITRE API."""
+    def _load_attack_data(self):
+        """Load MITRE ATT&CK data from source and cache it."""
         try:
-            # Set timeout for requests
-            timeout = 10
+            print("      📁 Reading enterprise-attack.json (43MB)...")
             
-            # Fetch techniques
-            techniques_response = requests.get(f"{self.enterprise_url}techniques/", timeout=timeout)
-            if techniques_response.status_code == 200:
-                self.techniques = self._parse_techniques(techniques_response.json())
+            # Load from the cached JSON file
+            json_file = os.path.join(self.cache_dir, "enterprise-attack.json")
+            if not os.path.exists(json_file):
+                print("      ❌ enterprise-attack.json not found in cache directory")
+                return
             
-            # Fetch tactics
-            tactics_response = requests.get(f"{self.enterprise_url}tactics/", timeout=timeout)
-            if tactics_response.status_code == 200:
-                self.tactics = self._parse_tactics(tactics_response.json())
+            self.mitre_data = MitreAttackData(json_file)
+            print("      ✅ MITRE ATT&CK data loaded successfully")
             
-            # Fetch threat actors
-            actors_response = requests.get(f"{self.enterprise_url}groups/", timeout=timeout)
-            if actors_response.status_code == 200:
-                self.threat_actors = self._parse_threat_actors(actors_response.json())
+            # Load all components
+            self._load_tactics()
+            self._load_techniques()
+            self._load_threat_actors()
+            self._load_malware()
             
-            # Fetch malware
-            malware_response = requests.get(f"{self.enterprise_url}malware/", timeout=timeout)
-            if malware_response.status_code == 200:
-                self.malware = self._parse_malware(malware_response.json())
+            # Save to cache for future use
+            self._save_to_cache()
+            
+        except Exception as e:
+            print(f"      ❌ Error loading MITRE ATT&CK data: {e}")
+            logger.error(f"Error loading MITRE ATT&CK data: {e}")
+    
+    def _load_techniques(self):
+        """Load all techniques from MITRE ATT&CK."""
+        try:
+            if not self.mitre_data:
+                return
+            
+            techniques = self.mitre_data.get_techniques(remove_revoked_deprecated=True)
+            total_techniques = len(techniques)
+            
+            print(f"      🔧 Loading all techniques...")
+            print(f"      📋 Processing {total_techniques} techniques...")
+            
+            for i, technique in enumerate(techniques):
+                # Show progress every 50 techniques
+                if i % 50 == 0:
+                    print(f"      Processing technique {i+1}/{total_techniques}...")
                 
-        except requests.exceptions.Timeout:
-            logger.warning("Timeout while fetching ATT&CK data. Using sample data.")
-        except requests.exceptions.ConnectionError:
-            logger.warning("Connection error while fetching ATT&CK data. Using sample data.")
-        except Exception as e:
-            logger.error(f"Error fetching ATT&CK data: {e}")
-            # Sample data is already loaded in __init__
-    
-    def _parse_techniques(self, raw_data: List[Dict]) -> Dict:
-        """Parse techniques data from API response."""
-        techniques = {}
-        for item in raw_data:
-            if 'external_references' in item:
-                for ref in item['external_references']:
-                    if ref.get('source_name') == 'mitre-attack':
-                        technique_id = ref.get('external_id')
-                        if technique_id:
-                            techniques[technique_id] = {
-                                'id': technique_id,
-                                'name': item.get('name', ''),
-                                'description': item.get('description', ''),
-                                'tactic': item.get('kill_chain_phases', [{}])[0].get('phase_name', ''),
-                                'url': f"https://attack.mitre.org/techniques/{technique_id}",
-                                'platforms': item.get('x_mitre_platforms', []),
-                                'permissions_required': item.get('x_mitre_permissions_required', []),
-                                'data_sources': item.get('x_mitre_data_sources', [])
-                            }
-        return techniques
-    
-    def _parse_tactics(self, raw_data: List[Dict]) -> Dict:
-        """Parse tactics data from API response."""
-        tactics = {}
-        for item in raw_data:
-            if 'external_references' in item:
-                for ref in item['external_references']:
-                    if ref.get('source_name') == 'mitre-attack':
-                        tactic_id = ref.get('external_id')
-                        if tactic_id:
-                            tactics[tactic_id] = {
-                                'id': tactic_id,
-                                'name': item.get('name', ''),
-                                'description': item.get('description', ''),
-                                'url': f"https://attack.mitre.org/tactics/{tactic_id}"
-                            }
-        return tactics
-    
-    def _parse_threat_actors(self, raw_data: List[Dict]) -> Dict:
-        """Parse threat actors data from API response."""
-        actors = {}
-        for item in raw_data:
-            if 'external_references' in item:
-                for ref in item['external_references']:
-                    if ref.get('source_name') == 'mitre-attack':
-                        actor_id = ref.get('external_id')
-                        if actor_id:
-                            actors[actor_id] = {
-                                'id': actor_id,
-                                'name': item.get('name', ''),
-                                'description': item.get('description', ''),
-                                'aliases': item.get('aliases', []),
-                                'url': f"https://attack.mitre.org/groups/{actor_id}"
-                            }
-        return actors
-    
-    def _parse_malware(self, raw_data: List[Dict]) -> Dict:
-        """Parse malware data from API response."""
-        malware = {}
-        for item in raw_data:
-            if 'external_references' in item:
-                for ref in item['external_references']:
-                    if ref.get('source_name') == 'mitre-attack':
-                        malware_id = ref.get('external_id')
-                        if malware_id:
-                            malware[malware_id] = {
-                                'id': malware_id,
-                                'name': item.get('name', ''),
-                                'description': item.get('description', ''),
-                                'aliases': item.get('aliases', []),
-                                'url': f"https://attack.mitre.org/software/{malware_id}"
-                            }
-        return malware
-    
-    def _load_sample_data(self):
-        """Load sample ATT&CK data for testing."""
-        self.techniques = {
-            'T1055': {
-                'id': 'T1055',
-                'name': 'Process Injection',
-                'description': 'Adversaries may inject code into processes to evade process-based defenses.',
-                'tactic': 'defense-evasion',
-                'url': 'https://attack.mitre.org/techniques/T1055',
-                'platforms': ['Windows', 'Linux', 'macOS'],
-                'permissions_required': ['User', 'Administrator'],
-                'data_sources': ['Process monitoring', 'API monitoring']
-            },
-            'T1071': {
-                'id': 'T1071',
-                'name': 'Application Layer Protocol',
-                'description': 'Adversaries may communicate using application layer protocols.',
-                'tactic': 'command-and-control',
-                'url': 'https://attack.mitre.org/techniques/T1071',
-                'platforms': ['Windows', 'Linux', 'macOS'],
-                'permissions_required': ['User'],
-                'data_sources': ['Network traffic analysis']
-            }
-        }
-        
-        self.tactics = {
-            'TA0001': {
-                'id': 'TA0001',
-                'name': 'Initial Access',
-                'description': 'The adversary is trying to get into your network.',
-                'url': 'https://attack.mitre.org/tactics/TA0001'
-            },
-            'TA0002': {
-                'id': 'TA0002', 
-                'name': 'Execution',
-                'description': 'The adversary is trying to run malicious code.',
-                'url': 'https://attack.mitre.org/tactics/TA0002'
-            }
-        }
-    
-    def map_process_behavior(self, process_data: Dict) -> List[Dict]:
-        """Map process behavior to ATT&CK techniques."""
-        mapped_techniques = []
-        
-        # Analyze process characteristics
-        process_name = process_data.get('name', '').lower()
-        process_path = process_data.get('path', '').lower()
-        connections = process_data.get('connections', [])
-        
-        # Check for process injection indicators
-        if any(indicator in process_name for indicator in ['inject', 'dll', 'hook']):
-            mapped_techniques.append({
-                'technique': self.techniques.get('T1055'),
-                'confidence': 'medium',
-                'evidence': f'Process name suggests injection: {process_name}'
-            })
-        
-        # Check for network communication
-        if connections:
-            mapped_techniques.append({
-                'technique': self.techniques.get('T1071'),
-                'confidence': 'high',
-                'evidence': f'Process has {len(connections)} network connections'
-            })
-        
-        return mapped_techniques
-    
-    def get_attack_chain(self, threat_actor: str) -> Dict:
-        """Get attack chain for specific threat actor."""
-        # This would typically fetch from MITRE API
-        # For now, return sample data
-        return {
-            'threat_actor': threat_actor,
-            'attack_chain': [
-                {
-                    'tactic': 'Initial Access',
-                    'techniques': ['T1078', 'T1133', 'T1190'],
-                    'description': 'Gain initial access to target environment'
-                },
-                {
-                    'tactic': 'Execution',
-                    'techniques': ['T1059', 'T1106', 'T1129'],
-                    'description': 'Execute malicious code on target systems'
-                },
-                {
-                    'tactic': 'Persistence',
-                    'techniques': ['T1053', 'T1060', 'T1078'],
-                    'description': 'Maintain access to target environment'
+                attack_id = self.mitre_data.get_attack_id(technique.id)
+                if not attack_id:
+                    continue
+                
+                # Get tactic information
+                tactic_shortname = None
+                if hasattr(technique, 'kill_chain_phases') and technique.kill_chain_phases:
+                    for phase in technique.kill_chain_phases:
+                        if phase.kill_chain_name == 'mitre-attack':
+                            tactic_shortname = phase.phase_name
+                            break
+                
+                self.techniques[attack_id] = {
+                    'id': attack_id,
+                    'name': technique.name,
+                    'description': technique.description,
+                    'tactic': tactic_shortname,
+                    'sub_techniques': [],
+                    'url': f"https://attack.mitre.org/techniques/{attack_id}",
+                    'stix_id': technique.id,
+                    'created': technique.created.isoformat() if technique.created else None,
+                    'modified': technique.modified.isoformat() if technique.modified else None,
+                    'platforms': getattr(technique, 'x_mitre_platforms', []),
+                    'permissions_required': getattr(technique, 'x_mitre_permissions_required', []),
+                    'data_sources': getattr(technique, 'x_mitre_data_sources', []),
+                    'defense_bypassed': getattr(technique, 'x_mitre_defense_bypassed', []),
+                    'detection': getattr(technique, 'x_mitre_detection', '')
                 }
-            ]
-        }
+            
+            print(f"      ✅ Loaded {len(self.techniques)} techniques")
+            logger.info(f"Loaded {len(self.techniques)} techniques")
+            
+            # Verify we have a reasonable number of techniques
+            if len(self.techniques) < 100:
+                print(f"      ⚠️  Warning: Only loaded {len(self.techniques)} techniques, expected ~679")
+                logger.warning(f"Only loaded {len(self.techniques)} techniques, expected ~679")
+            
+        except Exception as e:
+            print(f"      ❌ Error loading techniques: {e}")
+            logger.error(f"Error loading techniques: {e}")
+    
+    def _load_tactics(self):
+        """Load all tactics from MITRE ATT&CK."""
+        try:
+            if not self.mitre_data:
+                return
+            
+            tactics = self.mitre_data.get_tactics(remove_revoked_deprecated=True)
+            total_tactics = len(tactics)
+            
+            print(f"      🎯 Loading all tactics...")
+            
+            for tactic in tactics:
+                attack_id = self.mitre_data.get_attack_id(tactic.id)
+                if not attack_id:
+                    continue
+                
+                self.tactics[attack_id] = {
+                    'id': attack_id,
+                    'name': tactic.name,
+                    'description': tactic.description,
+                    'shortname': tactic.x_mitre_shortname if hasattr(tactic, 'x_mitre_shortname') else attack_id,
+                    'url': f"https://attack.mitre.org/tactics/{attack_id}",
+                    'stix_id': tactic.id,
+                    'created': tactic.created.isoformat() if tactic.created else None,
+                    'modified': tactic.modified.isoformat() if tactic.modified else None
+                }
+            
+            print(f"      ✅ Loaded {len(self.tactics)} tactics")
+            logger.info(f"Loaded {len(self.tactics)} tactics")
+            
+        except Exception as e:
+            logger.error(f"Error loading tactics: {e}")
+    
+    def _load_threat_actors(self):
+        """Load all threat actors from MITRE ATT&CK."""
+        try:
+            if not self.mitre_data:
+                return
+            
+            groups = self.mitre_data.get_groups(remove_revoked_deprecated=True)
+            total_groups = len(groups)
+            
+            print(f"      👥 Loading all threat actors...")
+            print(f"      📋 Processing {total_groups} threat actors...")
+            
+            for i, group in enumerate(groups):
+                # Show progress every 20 groups
+                if i % 20 == 0:
+                    print(f"      Processing threat actor {i+1}/{total_groups}...")
+                
+                attack_id = self.mitre_data.get_attack_id(group.id)
+                if not attack_id:
+                    continue
+                
+                # Get techniques used by this group
+                group_techniques = self.mitre_data.get_techniques_used_by_group(group.id)
+                technique_ids = []
+                for tech_rel in group_techniques:
+                    tech_id = self.mitre_data.get_attack_id(tech_rel['object'].id)
+                    if tech_id:
+                        technique_ids.append(tech_id)
+                
+                # Get software used by this group
+                group_software = self.mitre_data.get_software_used_by_group(group.id)
+                software_ids = []
+                for sw_rel in group_software:
+                    sw_id = self.mitre_data.get_attack_id(sw_rel['object'].id)
+                    if sw_id:
+                        software_ids.append(sw_id)
+                
+                self.threat_actors[attack_id] = {
+                    'id': attack_id,
+                    'name': group.name,
+                    'description': group.description,
+                    'aliases': group.aliases if hasattr(group, 'aliases') else [],
+                    'techniques': technique_ids,
+                    'software': software_ids,
+                    'url': f"https://attack.mitre.org/groups/{attack_id}",
+                    'stix_id': group.id,
+                    'created': group.created.isoformat() if group.created else None,
+                    'modified': group.modified.isoformat() if group.modified else None
+                }
+            
+            print(f"      ✅ Loaded {len(self.threat_actors)} threat actors")
+            logger.info(f"Loaded {len(self.threat_actors)} threat actors")
+            
+        except Exception as e:
+            logger.error(f"Error loading threat actors: {e}")
+    
+    def _load_malware(self):
+        """Load all malware from MITRE ATT&CK."""
+        try:
+            if not self.mitre_data:
+                return
+            
+            software = self.mitre_data.get_software(remove_revoked_deprecated=True)
+            total_software = len(software)
+            
+            print(f"      🦠 Loading all malware and tools...")
+            print(f"      📋 Processing {total_software} malware/tools...")
+            
+            for i, sw in enumerate(software):
+                # Show progress every 20 software
+                if i % 20 == 0:
+                    print(f"      Processing malware/tool {i+1}/{total_software}...")
+                
+                attack_id = self.mitre_data.get_attack_id(sw.id)
+                if not attack_id:
+                    continue
+                
+                # Get techniques used by this software
+                sw_techniques = self.mitre_data.get_techniques_used_by_software(sw.id)
+                technique_ids = []
+                for tech_rel in sw_techniques:
+                    tech_id = self.mitre_data.get_attack_id(tech_rel['object'].id)
+                    if tech_id:
+                        technique_ids.append(tech_id)
+                
+                # Determine software type
+                sw_type = 'malware'
+                if hasattr(sw, 'x_mitre_platforms') and 'PRE' in getattr(sw, 'x_mitre_platforms', []):
+                    sw_type = 'tool'
+                
+                self.malware[attack_id] = {
+                    'id': attack_id,
+                    'name': sw.name,
+                    'description': sw.description,
+                    'type': sw_type,
+                    'aliases': sw.aliases if hasattr(sw, 'aliases') else [],
+                    'techniques': technique_ids,
+                    'platforms': getattr(sw, 'x_mitre_platforms', []),
+                    'url': f"https://attack.mitre.org/software/{attack_id}",
+                    'stix_id': sw.id,
+                    'created': sw.created.isoformat() if sw.created else None,
+                    'modified': sw.modified.isoformat() if sw.modified else None
+                }
+            
+            print(f"      ✅ Loaded {len(self.malware)} malware/tools")
+            logger.info(f"Loaded {len(self.malware)} malware/tools")
+            
+        except Exception as e:
+            logger.error(f"Error loading malware: {e}")
+    
+    def get_technique_by_id(self, technique_id: str) -> Optional[Dict]:
+        """Get a specific technique by its ATT&CK ID."""
+        return self.techniques.get(technique_id)
     
     def search_techniques(self, query: str) -> List[Dict]:
-        """Search for ATT&CK techniques by name or description."""
-        results = []
-        query_lower = query.lower()
+        """Search techniques by name or description."""
+        if not query:
+            return list(self.techniques.values())
         
-        for technique_id, technique in self.techniques.items():
+        query_lower = query.lower()
+        results = []
+        
+        for technique in self.techniques.values():
             if (query_lower in technique['name'].lower() or 
-                query_lower in technique['description'].lower()):
+                query_lower in technique['description'].lower() or
+                query_lower in technique['id'].lower()):
                 results.append(technique)
         
         return results
-    
-    def get_technique_by_id(self, technique_id: str) -> Optional[Dict]:
-        """Get technique information by ID."""
-        return self.techniques.get(technique_id)
     
     def get_tactic_techniques(self, tactic_id: str) -> List[Dict]:
         """Get all techniques for a specific tactic."""
         results = []
+        
+        # First, try to find the tactic to get its shortname
+        tactic_shortname = None
+        for tactic in self.tactics.values():
+            if tactic.get('id') == tactic_id or tactic.get('shortname') == tactic_id:
+                tactic_shortname = tactic.get('shortname')
+                break
+        
+        print(f"DEBUG: Looking for techniques for tactic '{tactic_id}', found shortname: '{tactic_shortname}'")
+        
         for technique in self.techniques.values():
-            if technique.get('tactic') == tactic_id:
+            # Check if technique belongs to this tactic
+            if (technique.get('tactic') == tactic_id or 
+                technique.get('tactic') == tactic_shortname or
+                technique.get('tactic_shortname') == tactic_id or
+                technique.get('tactic_shortname') == tactic_shortname):
                 results.append(technique)
+        
+        print(f"DEBUG: Found {len(results)} techniques for tactic '{tactic_id}'")
         return results
     
     def get_threat_actor_techniques(self, actor_id: str) -> List[Dict]:
-        """Get techniques associated with a threat actor."""
-        # This would typically query MITRE API for actor-technique relationships
-        # For now, return sample data
-        return [
-            self.techniques.get('T1055'),
-            self.techniques.get('T1071')
-        ]
+        """Get all techniques used by a specific threat actor."""
+        actor = self.threat_actors.get(actor_id)
+        if not actor:
+            return []
+        
+        results = []
+        for tech_id in actor.get('techniques', []):
+            technique = self.techniques.get(tech_id)
+            if technique:
+                results.append(technique)
+        
+        return results
+    
+    def get_attack_matrix(self) -> Dict:
+        """Get the complete ATT&CK matrix structure."""
+        matrix = {
+            'tactics': [],
+            'techniques_by_tactic': {}
+        }
+        
+        # Add tactics
+        for tactic in self.tactics.values():
+            matrix['tactics'].append(tactic)
+            matrix['techniques_by_tactic'][tactic['shortname']] = []
+        
+        # Add techniques to their tactics
+        for technique in self.techniques.values():
+            tactic_shortname = technique['tactic']
+            if tactic_shortname in matrix['techniques_by_tactic']:
+                matrix['techniques_by_tactic'][tactic_shortname].append(technique)
+        
+        return matrix
+    
+    def get_all_techniques(self) -> List[Dict]:
+        """Get all techniques."""
+        return list(self.techniques.values())
+    
+    def get_all_tactics(self) -> List[Dict]:
+        """Get all tactics."""
+        return list(self.tactics.values())
+    
+    def get_all_threat_actors(self) -> List[Dict]:
+        """Get all threat actors."""
+        return list(self.threat_actors.values())
+    
+    def get_all_malware(self) -> List[Dict]:
+        """Get all malware and tools."""
+        return list(self.malware.values())
     
     def calculate_threat_score(self, mapped_techniques: List[Dict]) -> int:
         """Calculate threat score based on mapped techniques."""
@@ -356,34 +414,55 @@ class MitreAttackIntegration:
             return 0
         
         # Base score from number of techniques
-        base_score = len(mapped_techniques) * 10
+        base_score = min(len(mapped_techniques) * 10, 50)
         
-        # Adjust based on technique severity
-        severity_multiplier = 1.0
+        # Additional score from high-impact techniques
+        high_impact_techniques = [
+            'T1055',  # Process Injection
+            'T1071',  # Application Layer Protocol
+            'T1078',  # Valid Accounts
+            'T1083',  # File and Directory Discovery
+            'T1059',  # Command and Scripting Interpreter
+        ]
+        
+        impact_bonus = 0
         for technique in mapped_techniques:
-            if technique.get('confidence') == 'high':
-                severity_multiplier += 0.5
-            elif technique.get('confidence') == 'medium':
-                severity_multiplier += 0.25
+            if technique.get('id') in high_impact_techniques:
+                impact_bonus += 5
         
-        return min(int(base_score * severity_multiplier), 100)
+        return min(base_score + impact_bonus, 100)
     
-    def get_attack_matrix(self) -> Dict:
-        """Get the complete ATT&CK matrix structure."""
-        matrix = {}
-        for tactic_id, tactic in self.tactics.items():
-            matrix[tactic_id] = {
-                'tactic': tactic,
-                'techniques': self.get_tactic_techniques(tactic_id)
-            }
-        return matrix
-
-# Global instance - lazy loaded
-_mitre_attack_instance = None
+    def clear_cache(self):
+        """Clear the cache and force a fresh load."""
+        try:
+            if os.path.exists(self.cache_file):
+                os.remove(self.cache_file)
+                print("      🗑️  Cache cleared")
+            
+            # Reset all data
+            self.techniques = {}
+            self.tactics = {}
+            self.threat_actors = {}
+            self.malware = {}
+            
+            # Force fresh load
+            self._load_attack_data()
+            
+        except Exception as e:
+            print(f"      ❌ Error clearing cache: {e}")
+            logger.error(f"Error clearing cache: {e}")
+    
+    def get_cache_status(self) -> Dict:
+        """Get cache status information."""
+        return {
+            'cache_file_exists': os.path.exists(self.cache_file),
+            'techniques_count': len(self.techniques),
+            'tactics_count': len(self.tactics),
+            'threat_actors_count': len(self.threat_actors),
+            'malware_count': len(self.malware),
+            'cache_file_size': os.path.getsize(self.cache_file) if os.path.exists(self.cache_file) else 0
+        }
 
 def get_mitre_attack():
-    """Get the global MITRE ATT&CK instance (lazy loaded)."""
-    global _mitre_attack_instance
-    if _mitre_attack_instance is None:
-        _mitre_attack_instance = MitreAttackIntegration()
-    return _mitre_attack_instance 
+    """Get MITRE ATT&CK integration instance."""
+    return MitreAttackIntegration() 

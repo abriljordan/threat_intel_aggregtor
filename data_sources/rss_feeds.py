@@ -15,6 +15,8 @@ import json
 from bs4 import BeautifulSoup
 import threading
 import time
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
 
@@ -22,19 +24,27 @@ class RSSFeedProcessor:
     """Process RSS feeds for security news and threat intelligence."""
     
     CACHE_TTL_SECONDS = 300  # 5 minutes
+    BACKGROUND_REFRESH_INTERVAL = 600  # 10 minutes
     
     def __init__(self):
         """Initialize RSS feed processor."""
         self.feeds = {
+            # High-quality feeds from Awesome Threat Intel Blogs
             'the_hackers_news': {
                 'url': 'https://feeds.feedburner.com/TheHackersNews',
                 'name': 'The Hacker News',
                 'category': 'security_news',
                 'enabled': True
             },
-            'bleeping_computer': {
-                'url': 'https://www.bleepingcomputer.com/feed/',
-                'name': 'Bleeping Computer',
+            'krebs_on_security': {
+                'url': 'https://krebsonsecurity.com/feed/',
+                'name': 'Krebs on Security',
+                'category': 'security_news',
+                'enabled': True
+            },
+            'schneier_on_security': {
+                'url': 'https://www.schneier.com/feed/',
+                'name': 'Schneier on Security',
                 'category': 'security_news',
                 'enabled': True
             },
@@ -44,17 +54,77 @@ class RSSFeedProcessor:
                 'category': 'security_news',
                 'enabled': True
             },
+            'the_record': {
+                'url': 'https://therecord.media/feed/',
+                'name': 'The Record',
+                'category': 'security_news',
+                'enabled': True
+            },
+            'securelist': {
+                'url': 'https://securelist.com/feed/',
+                'name': 'Securelist',
+                'category': 'security_news',
+                'enabled': True
+            },
+            'welivesecurity': {
+                'url': 'https://www.welivesecurity.com/en/rss/feed/',
+                'name': 'We Live Security',
+                'category': 'security_news',
+                'enabled': True
+            },
+            'sophos_news': {
+                'url': 'https://news.sophos.com/en-us/category/threat-research/feed/',
+                'name': 'Sophos Threat Research',
+                'category': 'security_news',
+                'enabled': True
+            },
+            'sentinelone_labs': {
+                'url': 'https://www.sentinelone.com/labs/feed/',
+                'name': 'SentinelOne Labs',
+                'category': 'security_news',
+                'enabled': True
+            },
+            'crowdstrike_blog': {
+                'url': 'https://www.crowdstrike.com/blog/feed/',
+                'name': 'CrowdStrike Blog',
+                'category': 'security_news',
+                'enabled': True
+            },
+            'malwarebytes_labs': {
+                'url': 'https://blog.malwarebytes.com/feed/',
+                'name': 'Malwarebytes Labs',
+                'category': 'security_news',
+                'enabled': True
+            },
+            'microsoft_security': {
+                'url': 'https://api.msrc.microsoft.com/update-guide/rss',
+                'name': 'Microsoft Security Response Center',
+                'category': 'security_news',
+                'enabled': True
+            },
+            'google_project_zero': {
+                'url': 'https://googleprojectzero.blogspot.com/feeds/posts/default',
+                'name': 'Google Project Zero',
+                'category': 'security_news',
+                'enabled': True
+            },
+            'naked_security': {
+                'url': 'https://nakedsecurity.sophos.com/feed/',
+                'name': 'Naked Security',
+                'category': 'security_news',
+                'enabled': False  # Disabled due to XML parsing errors
+            },
             'security_week': {
                 'url': 'https://www.securityweek.com/feed/',
                 'name': 'Security Week',
                 'category': 'security_news',
-                'enabled': True
+                'enabled': False  # Keep disabled due to 403 errors
             },
-            'krebs_on_security': {
-                'url': 'https://krebsonsecurity.com/feed/',
-                'name': 'Krebs on Security',
+            'bleeping_computer': {
+                'url': 'https://www.bleepingcomputer.com/feed/',
+                'name': 'Bleeping Computer',
                 'category': 'security_news',
-                'enabled': True
+                'enabled': False  # Keep disabled due to 403 errors
             }
         }
         
@@ -79,10 +149,79 @@ class RSSFeedProcessor:
         ]
         
         logger.info("RSS Feed Processor initialized successfully")
-        # Caching attributes
+        
+        # Enhanced caching attributes
         self._news_cache = None
         self._news_cache_time = 0
         self._cache_lock = threading.Lock()
+        self._background_thread = None
+        self._stop_background = False
+        
+        # Start background refresh thread
+        self._start_background_refresh()
+    
+    def _start_background_refresh(self):
+        """Start background thread to refresh news cache."""
+        if self._background_thread is None or not self._background_thread.is_alive():
+            self._stop_background = False
+            self._background_thread = threading.Thread(target=self._background_refresh_worker, daemon=True)
+            self._background_thread.start()
+            logger.info("Started background news refresh thread")
+    
+    def _background_refresh_worker(self):
+        """Background worker that refreshes news cache periodically."""
+        while not self._stop_background:
+            try:
+                # Initial load
+                if self._news_cache is None:
+                    logger.info("Performing initial news cache load")
+                    self.process_security_news(use_cache=False)
+                
+                # Wait for refresh interval
+                time.sleep(self.BACKGROUND_REFRESH_INTERVAL)
+                
+                if not self._stop_background:
+                    logger.info("Performing background news cache refresh")
+                    self.process_security_news(use_cache=False)
+                    
+            except Exception as e:
+                logger.error(f"Error in background news refresh: {e}")
+                time.sleep(60)  # Wait 1 minute before retrying
+    
+    def stop_background_refresh(self):
+        """Stop the background refresh thread."""
+        self._stop_background = True
+        if self._background_thread and self._background_thread.is_alive():
+            self._background_thread.join(timeout=5)
+            logger.info("Stopped background news refresh thread")
+    
+    def get_cached_news(self) -> List[Dict]:
+        """Get cached news articles immediately without processing."""
+        with self._cache_lock:
+            if self._news_cache is not None:
+                return self._news_cache.copy()
+            return []
+    
+    def is_cache_fresh(self) -> bool:
+        """Check if the cache is fresh (within TTL)."""
+        now = time.time()
+        return (
+            self._news_cache is not None and
+            now - self._news_cache_time < self.CACHE_TTL_SECONDS
+        )
+    
+    def get_cache_status(self) -> Dict:
+        """Get cache status information."""
+        now = time.time()
+        with self._cache_lock:
+            return {
+                'has_cache': self._news_cache is not None,
+                'cache_age_seconds': now - self._news_cache_time if self._news_cache_time > 0 else None,
+                'cache_ttl_seconds': self.CACHE_TTL_SECONDS,
+                'is_fresh': self.is_cache_fresh(),
+                'article_count': len(self._news_cache) if self._news_cache else 0,
+                'background_thread_alive': self._background_thread.is_alive() if self._background_thread else False
+            }
     
     def process_security_news(self, max_age_hours: int = 24, use_cache: bool = True) -> List[Dict]:
         """Process security news from RSS feeds, with caching."""
@@ -96,6 +235,9 @@ class RSSFeedProcessor:
                     logger.debug("Returning cached security news articles.")
                     return self._news_cache
         
+        # Set flag to track processed articles for deduplication
+        self._processing_all_feeds = True
+        
         all_articles = []
         for feed_id, feed_config in self.feeds.items():
             if not feed_config['enabled']:
@@ -108,6 +250,9 @@ class RSSFeedProcessor:
                 
             except Exception as e:
                 logger.error(f"Error processing feed {feed_id}: {e}")
+        
+        # Clear the flag
+        self._processing_all_feeds = False
         
         # Sort by publication date
         all_articles.sort(key=lambda x: x.get('published_date', ''), reverse=True)
@@ -123,14 +268,38 @@ class RSSFeedProcessor:
     def _process_feed(self, feed_config: Dict, max_age_hours: int) -> List[Dict]:
         """Process a single RSS feed."""
         try:
-            # Parse RSS feed
-            feed = feedparser.parse(feed_config['url'])
+            # Parse RSS feed with timeout
+            # Configure retry strategy
+            retry_strategy = Retry(
+                total=3,
+                backoff_factor=1,
+                status_forcelist=[429, 500, 502, 503, 504],
+            )
+            adapter = HTTPAdapter(max_retries=retry_strategy)
+            session = requests.Session()
+            session.mount("http://", adapter)
+            session.mount("https://", adapter)
+            
+            # Fetch feed with timeout
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': 'application/rss+xml, application/xml, text/xml, */*',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1'
+            }
+            response = session.get(feed_config['url'], timeout=10, headers=headers)
+            response.raise_for_status()
+            
+            # Parse the feed content
+            feed = feedparser.parse(response.content)
             
             if feed.bozo:
-                logger.warning(f"Feed parsing error for {feed_config['name']}")
+                logger.warning(f"Feed parsing error for {feed_config['name']}: {feed.bozo_exception}")
             
             articles = []
-            cutoff_time = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)  # Make aware
+            cutoff_time = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
             
             for entry in feed.entries:
                 try:
@@ -147,20 +316,29 @@ class RSSFeedProcessor:
                     # Extract article content
                     article = self._extract_article_info(entry, feed_config)
                     
-                    if article and article['url'] not in self.processed_articles:
+                    if article:
                         # Extract threat intelligence
                         threat_intel = self._extract_threat_intelligence(article['content'])
                         article['threat_intelligence'] = threat_intel
                         
                         articles.append(article)
-                        self.processed_articles.add(article['url'])
+                        # Only track processed articles for overall processing, not individual feed tests
+                        if hasattr(self, '_processing_all_feeds') and self._processing_all_feeds:
+                            self.processed_articles.add(article['url'])
                 
                 except Exception as e:
                     logger.error(f"Error processing article: {e}")
                     continue
             
+            logger.info(f"Successfully processed {len(articles)} articles from {feed_config['name']}")
             return articles
             
+        except requests.exceptions.Timeout:
+            logger.error(f"Timeout processing feed {feed_config['name']}")
+            return []
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Request error processing feed {feed_config['name']}: {e}")
+            return []
         except Exception as e:
             logger.error(f"Error processing feed {feed_config['name']}: {e}")
             return []
@@ -174,7 +352,9 @@ class RSSFeedProcessor:
                 '%a, %d %b %Y %H:%M:%S %Z',
                 '%Y-%m-%dT%H:%M:%S%z',
                 '%Y-%m-%dT%H:%M:%SZ',
-                '%Y-%m-%d %H:%M:%S'
+                '%Y-%m-%d %H:%M:%S',
+                '%b %d, %Y %H:%M:%S%z',  # Added format for CrowdStrike
+                '%Y-%m-%dT%H:%M:%S.%f%z'  # Added format for Google Project Zero
             ]
             
             for fmt in date_formats:
@@ -189,11 +369,15 @@ class RSSFeedProcessor:
                 except ValueError:
                     continue
             
-            # If all formats fail, try feedparser's date parsing
-            parsed = feedparser._parse_date(date_string)
-            if parsed:
-                dt = datetime(*parsed[:6])
-                return dt.replace(tzinfo=timezone.utc)
+            # If all formats fail, try using dateutil parser as fallback
+            try:
+                from dateutil import parser
+                dt = parser.parse(date_string)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt.astimezone(timezone.utc)
+            except:
+                pass
             
         except Exception as e:
             logger.error(f"Error parsing date '{date_string}': {e}")

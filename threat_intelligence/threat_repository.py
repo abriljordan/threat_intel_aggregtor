@@ -9,7 +9,7 @@ import json
 import logging
 from typing import Dict, List, Optional
 from datetime import datetime
-from sqlalchemy import create_engine, Column, Integer, String, Text, Float, Boolean, DateTime
+from sqlalchemy import create_engine, Column, Integer, String, Text, Float, Boolean, DateTime, func
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, scoped_session
 import os
@@ -17,7 +17,7 @@ import os
 logger = logging.getLogger(__name__)
 
 # SQLAlchemy setup
-DATABASE_URL = os.getenv('THREAT_INTEL_DATABASE_URL', 'postgresql+psycopg2://postgres:postgres@localhost:5432/threat_intelligence')
+DATABASE_URL = os.getenv('THREAT_INTEL_DATABASE_URL', 'postgresql+psycopg2://postgres:metasploit@localhost:5432/threat_intelligence')
 engine = create_engine(DATABASE_URL, echo=False)
 SessionLocal = scoped_session(sessionmaker(autocommit=False, autoflush=False, bind=engine))
 Base = declarative_base()
@@ -190,6 +190,138 @@ class ThreatIntelligenceRepository:
 
     def close(self):
         self.db.close()
+
+    def get_threat_statistics(self) -> Dict:
+        """Get threat intelligence statistics from the database."""
+        try:
+            # Count threat actors
+            threat_actors_count = self.db.query(func.count(ThreatActor.id)).scalar()
+            
+            # Count malware families
+            malware_families_count = self.db.query(func.count(MalwareFamily.id)).scalar()
+            
+            # Count vulnerabilities
+            vulnerabilities_count = self.db.query(func.count(Vulnerability.id)).scalar()
+            
+            # Count observables
+            observables_count = self.db.query(func.count(Observable.id)).scalar()
+            
+            # Count high threat observables (threat_score >= 70)
+            high_threat_observables_count = self.db.query(func.count(Observable.id)).filter(
+                Observable.threat_score >= 70
+            ).scalar()
+            
+            return {
+                'threat_actors': threat_actors_count or 0,
+                'malware_families': malware_families_count or 0,
+                'vulnerabilities': vulnerabilities_count or 0,
+                'observables': observables_count or 0,
+                'high_threat_observables': high_threat_observables_count or 0
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting threat statistics: {e}")
+            return {
+                'threat_actors': 0,
+                'malware_families': 0,
+                'vulnerabilities': 0,
+                'observables': 0,
+                'high_threat_observables': 0
+            }
+
+    def search_threat_actors(self, query: str = '') -> List[Dict]:
+        """Search threat actors by name or description."""
+        try:
+            if query:
+                actors = self.db.query(ThreatActor).filter(
+                    ThreatActor.name.ilike(f'%{query}%') | 
+                    ThreatActor.description.ilike(f'%{query}%')
+                ).limit(50).all()
+            else:
+                actors = self.db.query(ThreatActor).limit(50).all()
+            
+            return [
+                {
+                    'id': actor.id,
+                    'actor_id': actor.actor_id,
+                    'name': actor.name,
+                    'aliases': json.loads(actor.aliases) if actor.aliases else [],
+                    'description': actor.description,
+                    'country': actor.country,
+                    'motivation': actor.motivation,
+                    'capabilities': json.loads(actor.capabilities) if actor.capabilities else [],
+                    'first_seen': actor.first_seen,
+                    'last_seen': actor.last_seen
+                }
+                for actor in actors
+            ]
+            
+        except Exception as e:
+            logger.error(f"Error searching threat actors: {e}")
+            return []
+
+    def search_malware_families(self, query: str = '') -> List[Dict]:
+        """Search malware families by name or description."""
+        try:
+            if query:
+                malware = self.db.query(MalwareFamily).filter(
+                    MalwareFamily.name.ilike(f'%{query}%') | 
+                    MalwareFamily.description.ilike(f'%{query}%')
+                ).limit(50).all()
+            else:
+                malware = self.db.query(MalwareFamily).limit(50).all()
+            
+            return [
+                {
+                    'id': m.id,
+                    'malware_id': m.malware_id,
+                    'name': m.name,
+                    'aliases': json.loads(m.aliases) if m.aliases else [],
+                    'description': m.description,
+                    'family_type': m.family_type,
+                    'capabilities': json.loads(m.capabilities) if m.capabilities else [],
+                    'iocs': json.loads(m.iocs) if m.iocs else [],
+                    'behavior_patterns': json.loads(m.behavior_patterns) if m.behavior_patterns else [],
+                    'first_seen': m.first_seen,
+                    'last_seen': m.last_seen
+                }
+                for m in malware
+            ]
+            
+        except Exception as e:
+            logger.error(f"Error searching malware families: {e}")
+            return []
+
+    def search_observables(self, query: str = '') -> List[Dict]:
+        """Search observables by value or type."""
+        try:
+            if query:
+                observables = self.db.query(Observable).filter(
+                    Observable.value.ilike(f'%{query}%') | 
+                    Observable.type.ilike(f'%{query}%')
+                ).limit(50).all()
+            else:
+                observables = self.db.query(Observable).limit(50).all()
+            
+            return [
+                {
+                    'id': obs.id,
+                    'observable_id': obs.observable_id,
+                    'type': obs.type,
+                    'value': obs.value,
+                    'confidence': obs.confidence,
+                    'threat_score': obs.threat_score,
+                    'tags': json.loads(obs.tags) if obs.tags else [],
+                    'meta': json.loads(obs.meta) if obs.meta else {},
+                    'first_seen': obs.first_seen.isoformat() if obs.first_seen else None,
+                    'last_seen': obs.last_seen.isoformat() if obs.last_seen else None
+                }
+                for obs in observables
+            ]
+            
+        except Exception as e:
+            logger.error(f"Error searching observables: {e}")
+            return []
 
 # Flask-style per-request repository
 from flask import g

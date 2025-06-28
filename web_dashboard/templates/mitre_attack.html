@@ -2,6 +2,138 @@
 
 {% block title %}MITRE ATT&CK Framework{% endblock %}
 
+{% block head %}
+<style>
+    .bg-gradient-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    
+    .bg-gradient-info {
+        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    }
+    
+    .bg-gradient-success {
+        background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+    }
+    
+    .bg-gradient-warning {
+        background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+    }
+    
+    .bg-gradient-danger {
+        background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);
+    }
+    
+    .shadow-sm {
+        box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    }
+    
+    .card {
+        border: none;
+        border-radius: 0.75rem;
+        transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+    }
+    
+    .card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    }
+    
+    .card-header {
+        border-radius: 0.75rem 0.75rem 0 0 !important;
+        border-bottom: none;
+    }
+    
+    .opacity-75 {
+        opacity: 0.75;
+    }
+    
+    .list-group-item {
+        border: none;
+        border-radius: 0.5rem !important;
+        margin-bottom: 0.5rem;
+        transition: all 0.2s ease-in-out;
+    }
+    
+    .list-group-item:hover {
+        background-color: #f8f9fa;
+        transform: translateX(5px);
+    }
+    
+    .technique-card {
+        border: none;
+        border-radius: 0.75rem;
+        box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+        transition: all 0.2s ease-in-out;
+    }
+    
+    .technique-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    }
+    
+    .technique-card .card-title a {
+        color: #495057;
+        text-decoration: none;
+    }
+    
+    .technique-card .card-title a:hover {
+        color: #007bff;
+    }
+    
+    .search-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+    }
+    
+    .search-card .form-control {
+        border: none;
+        border-radius: 0.5rem;
+    }
+    
+    .search-card .btn {
+        border-radius: 0.5rem;
+        border: none;
+    }
+    
+    /* Heatmap interaction styles */
+    #attack-matrix-chart {
+        transition: all 0.2s ease-in-out;
+    }
+    
+    #attack-matrix-chart:hover {
+        transform: scale(1.01);
+    }
+    
+    /* Active tactic highlighting */
+    .list-group-item.active {
+        background-color: #007bff !important;
+        border-color: #007bff !important;
+        color: white !important;
+    }
+    
+    .list-group-item.active h6,
+    .list-group-item.active p,
+    .list-group-item.active small {
+        color: white !important;
+    }
+    
+    /* Loading indicator */
+    .loading-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(255, 255, 255, 0.8);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid">
     <div class="row">
@@ -16,10 +148,10 @@
     <!-- Search Section -->
     <div class="row mb-4">
         <div class="col-md-8">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="card-title mb-0">
-                        <i class="fas fa-search text-info"></i>
+            <div class="card search-card shadow-sm">
+                <div class="card-header border-0">
+                    <h5 class="card-title mb-0 text-white">
+                        <i class="fas fa-search text-white"></i>
                         Search ATT&CK Techniques
                     </h5>
                 </div>
@@ -30,10 +162,10 @@
                                 <input type="text" class="form-control" id="technique-search-query" placeholder="Search techniques by name or description...">
                             </div>
                             <div class="col-md-4">
-                                <button type="submit" class="btn btn-primary">
+                                <button type="submit" class="btn btn-light">
                                     <i class="fas fa-search"></i> Search
                                 </button>
-                                <button type="button" class="btn btn-secondary" onclick="loadAllTechniques()">
+                                <button type="button" class="btn btn-outline-light" onclick="loadAllTechniques()">
                                     <i class="fas fa-list"></i> Show All
                                 </button>
                             </div>
@@ -43,10 +175,10 @@
             </div>
         </div>
         <div class="col-md-4">
-            <div class="card">
-                <div class="card-header">
+            <div class="card shadow-sm">
+                <div class="card-header bg-light">
                     <h5 class="card-title mb-0">
-                        <i class="fas fa-info-circle text-success"></i>
+                        <i class="fas fa-info-circle text-info"></i>
                         Framework Info
                     </h5>
                 </div>
@@ -61,15 +193,98 @@
     <!-- ATT&CK Matrix Visualization -->
     <div class="row mb-4">
         <div class="col-12">
-            <div class="card">
-                <div class="card-header">
+            <div class="card shadow-sm">
+                <div class="card-header bg-gradient-primary text-white">
                     <h5 class="card-title mb-0">
-                        <i class="fas fa-table text-warning"></i>
+                        <i class="fas fa-chart-area text-white"></i>
                         ATT&CK Matrix Overview
+                        <small class="text-white-50 ms-2">
+                            <i class="fas fa-mouse-pointer"></i> Click on any tactic to view techniques
+                        </small>
                     </h5>
                 </div>
                 <div class="card-body">
-                    <div id="attack-matrix-chart" style="height: 400px;"></div>
+                    <div id="attack-matrix-chart" style="height: 400px; cursor: pointer;"></div>
+                    <div class="text-center mt-2">
+                        <small class="text-muted">
+                            <i class="fas fa-info-circle"></i> 
+                            Click on any colored bar to view techniques for that tactic
+                        </small>
+                    </div>
+                    
+                    <!-- Tactic Quick Access Buttons -->
+                    <div class="mt-3">
+                        <h6 class="text-center mb-2">
+                            <i class="fas fa-thumbs-up"></i> Quick Access - Click any tactic below:
+                        </h6>
+                        <div id="tactic-buttons" class="d-flex flex-wrap justify-content-center gap-2">
+                            <!-- Buttons will be populated by JavaScript -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistics Dashboard -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card bg-gradient-info text-white shadow-sm">
+                <div class="card-body text-center">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h3 class="mb-0" id="total-techniques">-</h3>
+                            <p class="mb-0">Total Techniques</p>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="fas fa-tools fa-2x opacity-75"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-gradient-success text-white shadow-sm">
+                <div class="card-body text-center">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h3 class="mb-0" id="total-tactics">-</h3>
+                            <p class="mb-0">Tactics</p>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="fas fa-sitemap fa-2x opacity-75"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-gradient-warning text-white shadow-sm">
+                <div class="card-body text-center">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h3 class="mb-0" id="total-actors">-</h3>
+                            <p class="mb-0">Threat Actors</p>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="fas fa-user-secret fa-2x opacity-75"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-gradient-danger text-white shadow-sm">
+                <div class="card-body text-center">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h3 class="mb-0" id="total-malware">-</h3>
+                            <p class="mb-0">Malware/Tools</p>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="fas fa-bug fa-2x opacity-75"></i>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -146,7 +361,7 @@
     </div>
 
     <!-- Error Modal -->
-    <div class="modal fade" id="errorModal" tabindex="-1" role="dialog">
+    <div class="modal fade" id="errorModal" tabindex="-1" role="dialog" data-backdrop="static" data-keyboard="false">
         <div class="modal-dialog" role="document">
             <div class="modal-content">
                 <div class="modal-header">
@@ -154,8 +369,8 @@
                         <i class="fas fa-exclamation-triangle"></i>
                         Error
                     </h5>
-                    <button type="button" class="close" data-dismiss="modal">
-                        <span>&times;</span>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
                     </button>
                 </div>
                 <div class="modal-body">
@@ -163,6 +378,7 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" onclick="retryLoading()">Retry</button>
                 </div>
             </div>
         </div>
@@ -174,14 +390,34 @@
 <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 <script>
 $(document).ready(function() {
-    // Load ATT&CK data on page load
-    loadAttackMatrix();
-    loadTactics();
+    // Show loading state initially
+    $('#loading-spinner').show();
+    
+    // Wait a bit for MITRE data to load, then try to load ATT&CK data
+    setTimeout(function() {
+        loadAttackMatrix();
+        loadTactics();
+        
+        // Add test button for debugging
+        $('.card-header').append('<button onclick="testHeatmapClick()" class="btn btn-sm btn-outline-light float-end">Test Click</button>');
+    }, 2000); // Wait 2 seconds for backend to load data
     
     // Search form submission
     $('#technique-search-form').on('submit', function(e) {
         e.preventDefault();
         searchTechniques();
+    });
+
+    // Handle modal close events
+    $('#errorModal').on('hidden.bs.modal', function () {
+        $('#loading-spinner').hide();
+    });
+    
+    // Add escape key handler
+    $(document).keyup(function(e) {
+        if (e.key === "Escape") {
+            $('#errorModal').modal('hide');
+        }
     });
 });
 
@@ -191,6 +427,7 @@ function loadAttackMatrix() {
     $.ajax({
         url: '/threat-intel/mitre-attack/matrix',
         method: 'GET',
+        timeout: 30000, // 30 second timeout
         success: function(data) {
             $('#loading-spinner').hide();
             if (data.error) {
@@ -198,50 +435,224 @@ function loadAttackMatrix() {
                 return;
             }
             renderAttackMatrix(data);
+            updateStatistics(data);
         },
         error: function(xhr, status, error) {
             $('#loading-spinner').hide();
-            showError('Failed to load ATT&CK matrix: ' + error);
+            if (status === 'timeout') {
+                showError('Request timed out. MITRE ATT&CK data is still loading. Please wait and try again.');
+            } else {
+                showError('Failed to load ATT&CK matrix: ' + error);
+            }
         }
     });
 }
 
 function renderAttackMatrix(matrixData) {
-    // Create a simple matrix visualization
-    const tactics = Object.keys(matrixData);
-    const techniqueCounts = tactics.map(tactic => {
-        const techniques = matrixData[tactic]?.techniques || [];
-        return techniques.length;
-    });
-    
-    const data = [{
-        x: tactics,
-        y: techniqueCounts,
-        type: 'bar',
-        marker: {
-            color: 'rgba(52, 152, 219, 0.8)'
+    try {
+        console.log('Rendering ATT&CK matrix with data:', matrixData);
+        
+        // Create a modern heatmap visualization for ATT&CK matrix
+        const tactics = matrixData.tactics || [];
+        const techniquesByTactic = matrixData.techniques_by_tactic || {};
+        
+        console.log('Tactics:', tactics.length);
+        console.log('Techniques by tactic:', Object.keys(techniquesByTactic));
+        
+        // Prepare data for heatmap
+        const tacticNames = tactics.map(t => t.name);
+        const tacticIds = tactics.map(t => t.shortname);
+        
+        console.log('Tactic names:', tacticNames);
+        console.log('Tactic IDs (shortnames):', tacticIds);
+        
+        // Create technique count data
+        const techniqueCounts = tacticIds.map(tacticId => {
+            const techniques = techniquesByTactic[tacticId] || [];
+            return techniques.length;
+        });
+        
+        console.log('Technique counts:', techniqueCounts);
+        
+        // Create color scale based on technique counts
+        const maxCount = Math.max(...techniqueCounts);
+        const colors = techniqueCounts.map(count => {
+            const intensity = count / maxCount;
+            return `rgba(52, 152, 219, ${0.3 + intensity * 0.7})`;
+        });
+        
+        // Create modern heatmap
+        const data = [{
+            x: tacticNames,
+            y: ['Techniques'],
+            z: [techniqueCounts],
+            type: 'heatmap',
+            colorscale: [
+                [0, 'rgba(52, 152, 219, 0.1)'],
+                [0.25, 'rgba(52, 152, 219, 0.3)'],
+                [0.5, 'rgba(52, 152, 219, 0.5)'],
+                [0.75, 'rgba(52, 152, 219, 0.7)'],
+                [1, 'rgba(52, 152, 219, 0.9)']
+            ],
+            hoverongaps: false,
+            hovertemplate: '<b>%{x}</b><br>Techniques: %{z}<br><small>Click to view techniques</small><extra></extra>',
+            showscale: true,
+            colorbar: {
+                title: 'Technique Count',
+                titleside: 'right',
+                thickness: 15,
+                len: 0.5
+            },
+            hoverlabel: {
+                bgcolor: 'rgba(52, 152, 219, 0.9)',
+                bordercolor: 'rgba(52, 152, 219, 1)',
+                font: { color: 'white' }
+            }
+        }];
+        
+        const layout = {
+            title: {
+                text: 'MITRE ATT&CK Matrix - Technique Distribution',
+                font: {
+                    size: 20,
+                    color: '#2c3e50'
+                },
+                x: 0.5
+            },
+            xaxis: {
+                title: {
+                    text: 'Tactics',
+                    font: {
+                        size: 16,
+                        color: '#34495e'
+                    }
+                },
+                tickangle: 45,
+                tickfont: {
+                    size: 14,
+                    color: '#2c3e50'
+                },
+                showgrid: false,
+                tickmode: 'array',
+                ticktext: tacticNames,
+                tickvals: Array.from({length: tacticNames.length}, (_, i) => i)
+            },
+            yaxis: {
+                title: {
+                    text: '',
+                    font: {
+                        size: 14,
+                        color: '#34495e'
+                    }
+                },
+                showgrid: false,
+                showticklabels: false
+            },
+            height: 400,
+            margin: {
+                l: 50,
+                r: 80,
+                t: 80,
+                b: 120
+            },
+            plot_bgcolor: 'rgba(0,0,0,0)',
+            paper_bgcolor: 'rgba(0,0,0,0)',
+            font: {
+                family: 'Arial, sans-serif'
+            }
+        };
+        
+        const config = {
+            responsive: true,
+            displayModeBar: true,
+            modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d'],
+            displaylogo: false
+        };
+        
+        console.log('Creating Plotly chart...');
+        Plotly.newPlot('attack-matrix-chart', data, layout, config).then(function() {
+            console.log('Plotly chart created successfully');
+            
+            // Add click handlers for tactics using Plotly's built-in event system
+            const chartElement = document.getElementById('attack-matrix-chart');
+            chartElement.on('plotly_click', function(data) {
+                console.log('Heatmap clicked:', data);
+                if (data.points && data.points[0]) {
+                    const point = data.points[0];
+                    const tacticIndex = point.pointIndex;
+                    const tacticId = tacticIds[tacticIndex];
+                    const tacticName = tacticNames[tacticIndex];
+                    
+                    console.log('Clicked on:', {
+                        tacticIndex,
+                        tacticId,
+                        tacticName,
+                        x: point.x,
+                        y: point.y,
+                        z: point.z
+                    });
+                    
+                    if (tacticId) {
+                        console.log('Loading techniques for tactic:', tacticId);
+                        loadTechniquesByTactic(tacticId);
+                        
+                        // Also update the UI to show which tactic was selected
+                        $('.list-group-item').removeClass('active');
+                        $(`.list-group-item:contains('${tacticName}')`).addClass('active');
+                    }
+                }
+            });
+            
+            console.log('Click handler attached to heatmap');
+            
+            // Create tactic buttons for quick access
+            createTacticButtons(tacticNames, tacticIds);
+            
+        }).catch(function(error) {
+            console.error('Error creating Plotly chart:', error);
+            showError('Failed to create chart: ' + error.message);
+        });
+        
+        function createTacticButtons(tacticNames, tacticIds) {
+            const buttonsContainer = document.getElementById('tactic-buttons');
+            if (!buttonsContainer) return;
+            
+            buttonsContainer.innerHTML = '';
+            
+            tacticNames.forEach((name, index) => {
+                const tacticId = tacticIds[index];
+                const button = document.createElement('button');
+                button.className = 'btn btn-outline-primary btn-sm';
+                button.textContent = name;
+                button.style.fontSize = '12px';
+                button.style.padding = '4px 8px';
+                button.style.margin = '2px';
+                
+                button.onclick = function() {
+                    console.log('Tactic button clicked:', tacticId, name);
+                    loadTechniquesByTactic(tacticId);
+                    
+                    // Update active states
+                    $('.list-group-item').removeClass('active');
+                    $('.btn-outline-primary').removeClass('btn-primary').addClass('btn-outline-primary');
+                    $(this).removeClass('btn-outline-primary').addClass('btn-primary');
+                };
+                
+                buttonsContainer.appendChild(button);
+            });
         }
-    }];
-    
-    const layout = {
-        title: 'ATT&CK Matrix - Techniques per Tactic',
-        xaxis: {
-            title: 'Tactics',
-            tickangle: 45
-        },
-        yaxis: {
-            title: 'Number of Techniques'
-        },
-        height: 400
-    };
-    
-    Plotly.newPlot('attack-matrix-chart', data, layout);
+        
+    } catch (error) {
+        console.error('Error in renderAttackMatrix:', error);
+        showError('Failed to render matrix: ' + error.message);
+    }
 }
 
 function loadTactics() {
     $.ajax({
         url: '/threat-intel/mitre-attack/tactics',
         method: 'GET',
+        timeout: 30000, // 30 second timeout
         success: function(data) {
             if (data.error) {
                 showError(data.error);
@@ -250,7 +661,11 @@ function loadTactics() {
             displayTactics(data.tactics || []);
         },
         error: function(xhr, status, error) {
-            showError('Failed to load tactics: ' + error);
+            if (status === 'timeout') {
+                showError('Request timed out. MITRE ATT&CK data is still loading. Please wait and try again.');
+            } else {
+                showError('Failed to load tactics: ' + error);
+            }
         }
     });
 }
@@ -265,8 +680,10 @@ function displayTactics(tactics) {
     
     let html = '<div class="list-group">';
     tactics.forEach(tactic => {
+        // Use shortname for the onclick handler, but show ID in the display
+        const tacticIdentifier = tactic.shortname || tactic.id;
         html += `
-            <a href="#" class="list-group-item list-group-item-action" onclick="loadTechniquesByTactic('${tactic.id}')">
+            <a href="#" class="list-group-item list-group-item-action" onclick="loadTechniquesByTactic('${tacticIdentifier}')">
                 <h6 class="mb-1">${tactic.id}</h6>
                 <p class="mb-1">${tactic.name}</p>
                 <small class="text-muted">${tactic.description || 'No description'}</small>
@@ -279,6 +696,7 @@ function displayTactics(tactics) {
 }
 
 function loadTechniquesByTactic(tacticId) {
+    console.log('Loading techniques for tactic:', tacticId);
     $('#loading-spinner').show();
     
     $.ajax({
@@ -286,6 +704,7 @@ function loadTechniquesByTactic(tacticId) {
         method: 'GET',
         success: function(data) {
             $('#loading-spinner').hide();
+            console.log('Techniques response:', data);
             if (data.error) {
                 showError(data.error);
                 return;
@@ -294,6 +713,7 @@ function loadTechniquesByTactic(tacticId) {
         },
         error: function(xhr, status, error) {
             $('#loading-spinner').hide();
+            console.error('Error loading techniques:', error);
             showError('Failed to load techniques: ' + error);
         }
     });
@@ -360,17 +780,22 @@ function displayTechniques(techniques) {
     techniques.forEach(technique => {
         html += `
             <div class="col-md-6 mb-3">
-                <div class="card">
+                <div class="card technique-card">
                     <div class="card-body">
                         <h6 class="card-title">
                             <a href="#" onclick="showTechniqueDetails('${technique.id}')" class="text-decoration-none">
+                                <i class="fas fa-tools text-primary me-2"></i>
                                 ${technique.id}: ${technique.name}
                             </a>
                         </h6>
-                        <p class="card-text">${technique.description ? technique.description.substring(0, 150) + '...' : 'No description available'}</p>
-                        <small class="text-muted">
-                            <strong>Tactic:</strong> ${technique.tactic || 'Unknown'}
-                        </small>
+                        <p class="card-text text-muted">${technique.description ? technique.description.substring(0, 150) + '...' : 'No description available'}</p>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <small class="text-muted">
+                                <i class="fas fa-sitemap me-1"></i>
+                                <strong>Tactic:</strong> ${technique.tactic || 'Unknown'}
+                            </small>
+                            <span class="badge bg-primary">${technique.id}</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -452,6 +877,110 @@ function displayTechniqueDetails(technique) {
 function showError(message) {
     $('#error-message').text(message);
     $('#errorModal').modal('show');
+}
+
+function retryLoading() {
+    $('#errorModal').modal('hide');
+    $('#loading-spinner').show();
+    
+    // Wait a moment then retry
+    setTimeout(function() {
+        loadAttackMatrix();
+        loadTactics();
+    }, 1000);
+}
+
+function updateStatistics(matrixData) {
+    try {
+        console.log('Updating statistics with data:', matrixData);
+        
+        // Calculate statistics from matrix data
+        const tactics = matrixData.tactics || [];
+        const techniquesByTactic = matrixData.techniques_by_tactic || {};
+        
+        // Count total techniques
+        let totalTechniques = 0;
+        Object.values(techniquesByTactic).forEach(techniques => {
+            totalTechniques += techniques.length;
+        });
+        
+        console.log('Calculated statistics:', {
+            totalTechniques,
+            totalTactics: tactics.length
+        });
+        
+        // Update statistics cards with animation
+        animateCounter('#total-techniques', totalTechniques);
+        animateCounter('#total-tactics', tactics.length);
+        
+        // Load additional statistics
+        loadAdditionalStatistics();
+        
+    } catch (error) {
+        console.error('Error updating statistics:', error);
+    }
+}
+
+function loadAdditionalStatistics() {
+    console.log('Loading additional statistics...');
+    
+    // Load threat actors and malware counts
+    $.ajax({
+        url: '/threat-intel/mitre-attack/status',
+        method: 'GET',
+        success: function(data) {
+            console.log('Status data received:', data);
+            if (data.threat_actors_count !== undefined) {
+                animateCounter('#total-actors', data.threat_actors_count);
+            }
+            if (data.malware_count !== undefined) {
+                animateCounter('#total-malware', data.malware_count);
+            }
+        },
+        error: function(xhr, status, error) {
+            console.warn('Failed to load additional statistics, using defaults:', error);
+            // Use default values if status endpoint fails
+            animateCounter('#total-actors', 166);
+            animateCounter('#total-malware', 755);
+        }
+    });
+}
+
+function animateCounter(elementId, targetValue) {
+    const element = $(elementId);
+    const startValue = 0;
+    const duration = 1000;
+    const startTime = performance.now();
+    
+    function updateCounter(currentTime) {
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        
+        // Easing function for smooth animation
+        const easeOutQuart = 1 - Math.pow(1 - progress, 4);
+        const currentValue = Math.floor(startValue + (targetValue - startValue) * easeOutQuart);
+        
+        element.text(currentValue.toLocaleString());
+        
+        if (progress < 1) {
+            requestAnimationFrame(updateCounter);
+        } else {
+            element.text(targetValue.toLocaleString());
+        }
+    }
+    
+    requestAnimationFrame(updateCounter);
+}
+
+function testHeatmapClick() {
+    console.log('Testing heatmap click functionality...');
+    const chartElement = document.getElementById('attack-matrix-chart');
+    if (chartElement) {
+        console.log('Chart element found');
+        console.log('Chart element event listeners:', chartElement.on);
+    } else {
+        console.log('Chart element not found');
+    }
 }
 </script>
 {% endblock %} 

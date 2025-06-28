@@ -39,6 +39,7 @@ try:
     from threat_intelligence.threat_repository import get_threat_repository
     from data_sources.rss_feeds import get_rss_processor
     from .advanced_dashboard import advanced_dashboard
+    print("✅ Successfully imported threat intelligence modules")
 except ImportError as e:
     print(f"Warning: Could not import threat intelligence modules: {e}")
     get_mitre_attack = None
@@ -98,6 +99,7 @@ def threat_intelligence():
 @main.route('/security-news')
 @login_required
 def security_news():
+    """Render the security news page."""
     return render_template('security_news.html')
 
 @main.route('/mitre-attack')
@@ -505,6 +507,8 @@ def collect_real_threat_data():
             except Exception as e:
                 print(f"Error getting threat repository data: {e}")
                 threat_data['overall_threat_score'] = 0
+        else:
+            threat_data['overall_threat_score'] = 0
         # 2. Get threat categories from recent alerts and reports
         threat_data['threat_categories'] = get_threat_categories_from_reports()
         # 3. Get threat timeline from recent activity
@@ -768,81 +772,38 @@ def get_mitre_techniques():
     """Get MITRE ATT&CK techniques."""
     try:
         if not get_mitre_attack:
-            # Return sample techniques if MITRE ATT&CK is not available
-            return jsonify({'techniques': generate_sample_techniques()})
+            return jsonify({'error': 'MITRE ATT&CK not available - import failed'}), 503
         
         mitre_attack = get_mitre_attack()
+        if not mitre_attack:
+            return jsonify({'error': 'MITRE ATT&CK not initialized'}), 503
+        
         query = request.args.get('query', '')
+        tactic = request.args.get('tactic', '')
+        
+        print(f"DEBUG: Query='{query}', Tactic='{tactic}'")
+        
         if query:
             techniques = mitre_attack.search_techniques(query)
+        elif tactic:
+            techniques = mitre_attack.get_tactic_techniques(tactic)
         else:
-            techniques = list(mitre_attack.techniques.values())
+            techniques = mitre_attack.get_all_techniques()
         
-        # If no techniques available, return sample data
-        if not techniques:
-            techniques = generate_sample_techniques()
+        print(f"DEBUG: Found {len(techniques)} techniques")
+        if techniques:
+            print(f"DEBUG: First technique: {techniques[0]}")
+        
+        # Apply limit if specified
+        limit = request.args.get('limit', 100, type=int)
+        if limit and len(techniques) > limit:
+            techniques = techniques[:limit]
         
         return jsonify({'techniques': techniques})
         
     except Exception as e:
-        # Return sample data on error
-        return jsonify({'techniques': generate_sample_techniques()})
-
-def generate_sample_techniques():
-    """Generate sample MITRE ATT&CK techniques."""
-    sample_techniques = [
-        {
-            'id': 'T1055',
-            'name': 'Process Injection',
-            'description': 'Adversaries may inject code into processes to evade process-based defenses and elevate privileges.',
-            'tactic': 'defense-evasion',
-            'url': 'https://attack.mitre.org/techniques/T1055',
-            'platforms': ['Windows', 'Linux', 'macOS'],
-            'permissions_required': ['User', 'Administrator'],
-            'data_sources': ['Process monitoring', 'API monitoring']
-        },
-        {
-            'id': 'T1071',
-            'name': 'Application Layer Protocol',
-            'description': 'Adversaries may communicate using application layer protocols to avoid detection/network filtering by blending in with existing traffic.',
-            'tactic': 'command-and-control',
-            'url': 'https://attack.mitre.org/techniques/T1071',
-            'platforms': ['Windows', 'Linux', 'macOS'],
-            'permissions_required': ['User'],
-            'data_sources': ['Network traffic analysis']
-        },
-        {
-            'id': 'T1059',
-            'name': 'Command and Scripting Interpreter',
-            'description': 'Adversaries may abuse command and script interpreters to execute commands, scripts, or binaries.',
-            'tactic': 'execution',
-            'url': 'https://attack.mitre.org/techniques/T1059',
-            'platforms': ['Windows', 'Linux', 'macOS'],
-            'permissions_required': ['User'],
-            'data_sources': ['Process monitoring', 'Command monitoring']
-        },
-        {
-            'id': 'T1078',
-            'name': 'Valid Accounts',
-            'description': 'Adversaries may obtain and abuse credentials of existing accounts as a means of gaining Initial Access, Persistence, Privilege Escalation, or Defense Evasion.',
-            'tactic': 'initial-access',
-            'url': 'https://attack.mitre.org/techniques/T1078',
-            'platforms': ['Windows', 'Linux', 'macOS'],
-            'permissions_required': ['User'],
-            'data_sources': ['Authentication logs', 'User account monitoring']
-        },
-        {
-            'id': 'T1083',
-            'name': 'File and Directory Discovery',
-            'description': 'Adversaries may enumerate files and directories or may search in specific locations of a host or network share for certain information.',
-            'tactic': 'discovery',
-            'url': 'https://attack.mitre.org/techniques/T1083',
-            'platforms': ['Windows', 'Linux', 'macOS'],
-            'permissions_required': ['User'],
-            'data_sources': ['File monitoring', 'Process monitoring']
-        }
-    ]
-    return sample_techniques
+        print(f"Error getting MITRE techniques: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @threat_intel.route('/mitre-attack/techniques/<technique_id>')
 @login_required
@@ -850,9 +811,12 @@ def get_mitre_technique(technique_id):
     """Get specific MITRE ATT&CK technique."""
     try:
         if not get_mitre_attack:
-            return jsonify({'error': 'MITRE ATT&CK not available'}), 503
+            return jsonify({'error': 'MITRE ATT&CK not available - import failed'}), 503
         
         mitre_attack = get_mitre_attack()
+        if not mitre_attack:
+            return jsonify({'error': 'MITRE ATT&CK not initialized'}), 503
+        
         technique = mitre_attack.get_technique_by_id(technique_id)
         if technique:
             return jsonify(technique)
@@ -860,6 +824,7 @@ def get_mitre_technique(technique_id):
             return jsonify({'error': 'Technique not found'}), 404
             
     except Exception as e:
+        print(f"Error getting MITRE technique {technique_id}: {e}")
         return jsonify({'error': str(e)}), 500
 
 @threat_intel.route('/mitre-attack/tactics')
@@ -868,13 +833,21 @@ def get_mitre_tactics():
     """Get MITRE ATT&CK tactics."""
     try:
         if not get_mitre_attack:
-            return jsonify({'error': 'MITRE ATT&CK not available'}), 503
+            return jsonify({'error': 'MITRE ATT&CK not available - import failed'}), 503
         
         mitre_attack = get_mitre_attack()
-        tactics = list(mitre_attack.tactics.values())
+        if not mitre_attack:
+            return jsonify({'error': 'MITRE ATT&CK not initialized'}), 503
+        
+        tactics = mitre_attack.get_all_tactics()
+        print(f"DEBUG: Found {len(tactics)} tactics")
+        if tactics:
+            print(f"DEBUG: First tactic: {tactics[0]}")
+        
         return jsonify({'tactics': tactics})
         
     except Exception as e:
+        print(f"Error getting MITRE tactics: {e}")
         return jsonify({'error': str(e)}), 500
 
 @threat_intel.route('/mitre-attack/matrix')
@@ -883,13 +856,23 @@ def get_mitre_matrix():
     """Get MITRE ATT&CK matrix."""
     try:
         if not get_mitre_attack:
-            return jsonify({'error': 'MITRE ATT&CK not available'}), 503
+            return jsonify({'error': 'MITRE ATT&CK not available - import failed'}), 503
         
         mitre_attack = get_mitre_attack()
+        if not mitre_attack:
+            return jsonify({'error': 'MITRE ATT&CK not initialized'}), 503
+        
         matrix = mitre_attack.get_attack_matrix()
+        print(f"DEBUG: Matrix data structure:")
+        print(f"  - Tactics count: {len(matrix.get('tactics', []))}")
+        print(f"  - Techniques by tactic keys: {list(matrix.get('techniques_by_tactic', {}).keys())}")
+        if matrix.get('tactics'):
+            print(f"  - First tactic: {matrix['tactics'][0]}")
+        
         return jsonify(matrix)
         
     except Exception as e:
+        print(f"Error getting MITRE matrix: {e}")
         return jsonify({'error': str(e)}), 500
 
 @threat_intel.route('/threat-actors')
@@ -983,13 +966,15 @@ def get_threat_statistics():
         threat_repository = get_threat_repository()
         stats = threat_repository.get_threat_statistics()
         
-        # If no stats available, return sample data
-        if not stats or all(v == 0 for v in stats.values()):
-            stats = generate_sample_statistics()
-        
-        return jsonify(stats)
+        # Only return sample data if all counts are 0 (indicating empty database)
+        if stats and any(v > 0 for v in stats.values()):
+            return jsonify(stats)
+        else:
+            # Database is empty, return sample data
+            return jsonify(generate_sample_statistics())
         
     except Exception as e:
+        print(f"Error getting threat statistics: {e}")
         # Return sample data on error
         return jsonify(generate_sample_statistics())
 
@@ -1006,166 +991,43 @@ def generate_sample_statistics():
     }
 
 # Security News API routes
-@threat_intel.route('/security-news')
+@threat_intel.route('/security-news/cache-status')
 @login_required
-def get_security_news():
-    """Get security news from RSS feeds."""
+def get_news_cache_status():
+    """Get security news cache status."""
     try:
         if not get_rss_processor:
-            # Return sample news data if RSS processor is not available
-            return jsonify({'articles': generate_sample_news_articles()})
+            return jsonify({'error': 'RSS processor not available'}), 503
         
         rss_processor = get_rss_processor()
-        limit = request.args.get('limit', 20, type=int)
-        category = request.args.get('category', '')
+        status = rss_processor.get_cache_status()
         
-        if category:
-            articles = rss_processor.get_articles_by_category(category, limit)
-        else:
-            articles = rss_processor.get_latest_articles(limit)
-        
-        # If no articles from RSS, return sample data
-        if not articles:
-            articles = generate_sample_news_articles()
-        
-        return jsonify({'articles': articles})
+        return jsonify(status)
         
     except Exception as e:
-        # Return sample data on error
-        return jsonify({'articles': generate_sample_news_articles()})
+        return jsonify({'error': str(e)}), 500
 
-def generate_sample_news_articles():
-    """Generate sample security news articles."""
-    from datetime import datetime, timedelta
-    import random
-    
-    sample_articles = [
-        {
-            'title': 'New Emotet Malware Campaign Targets Financial Institutions',
-            'url': 'https://example.com/emotet-campaign-2024',
-            'content': 'Security researchers have discovered a new Emotet malware campaign targeting financial institutions across Europe and North America. The campaign uses sophisticated phishing techniques to deliver the banking trojan.',
-            'summary': 'New Emotet campaign targets financial sector with advanced phishing techniques.',
-            'author': 'Security Research Team',
-            'published_date': (datetime.now() - timedelta(hours=2)).isoformat(),
-            'source': 'The Hacker News',
-            'category': 'security_news',
-            'threat_intelligence': {
-                'keywords_found': ['malware', 'phishing', 'financial', 'emotet'],
-                'malware_mentioned': ['emotet'],
-                'threat_actors_mentioned': [],
-                'vulnerabilities_mentioned': [],
-                'iocs_found': ['192.168.1.100', 'malware.example.com'],
-                'threat_score': 85,
-                'categories': ['malware', 'phishing']
-            }
-        },
-        {
-            'title': 'APT29 Exploits Zero-Day Vulnerability in Microsoft Exchange',
-            'url': 'https://example.com/apt29-exchange-vulnerability',
-            'content': 'Microsoft has released an emergency patch for a zero-day vulnerability in Exchange Server that is being actively exploited by APT29 (Cozy Bear). The vulnerability allows remote code execution.',
-            'summary': 'APT29 exploits zero-day in Microsoft Exchange, emergency patch released.',
-            'author': 'Microsoft Security Response',
-            'published_date': (datetime.now() - timedelta(hours=6)).isoformat(),
-            'source': 'Bleeping Computer',
-            'category': 'security_news',
-            'threat_intelligence': {
-                'keywords_found': ['apt', 'zero-day', 'vulnerability', 'microsoft', 'exchange'],
-                'malware_mentioned': [],
-                'threat_actors_mentioned': ['apt29'],
-                'vulnerabilities_mentioned': ['CVE-2024-1234'],
-                'iocs_found': ['10.0.0.1', 'exchange.example.com'],
-                'threat_score': 95,
-                'categories': ['apt', 'vulnerability']
-            }
-        },
-        {
-            'title': 'Ransomware Attack on Healthcare Provider Affects 500,000 Patients',
-            'url': 'https://example.com/healthcare-ransomware-attack',
-            'content': 'A major healthcare provider has confirmed a ransomware attack that has affected over 500,000 patient records. The attack appears to be the work of the Conti ransomware group.',
-            'summary': 'Healthcare provider hit by Conti ransomware, 500K patient records affected.',
-            'author': 'Healthcare Security Team',
-            'published_date': (datetime.now() - timedelta(hours=12)).isoformat(),
-            'source': 'Threatpost',
-            'category': 'security_news',
-            'threat_intelligence': {
-                'keywords_found': ['ransomware', 'healthcare', 'data breach', 'conti'],
-                'malware_mentioned': ['conti'],
-                'threat_actors_mentioned': [],
-                'vulnerabilities_mentioned': [],
-                'iocs_found': ['172.16.0.1'],
-                'threat_score': 90,
-                'categories': ['ransomware', 'data_breach']
-            }
-        },
-        {
-            'title': 'New Phishing Campaign Uses AI-Generated Content',
-            'url': 'https://example.com/ai-phishing-campaign',
-            'content': 'Security researchers have identified a new phishing campaign that uses AI-generated content to create highly convincing emails. The campaign targets executives and uses sophisticated social engineering techniques.',
-            'summary': 'AI-generated phishing content targets executives with sophisticated social engineering.',
-            'author': 'AI Security Research',
-            'published_date': (datetime.now() - timedelta(hours=18)).isoformat(),
-            'source': 'Security Week',
-            'category': 'security_news',
-            'threat_intelligence': {
-                'keywords_found': ['phishing', 'ai', 'social engineering', 'executives'],
-                'malware_mentioned': [],
-                'threat_actors_mentioned': [],
-                'vulnerabilities_mentioned': [],
-                'iocs_found': ['phish.example.com'],
-                'threat_score': 75,
-                'categories': ['phishing']
-            }
-        },
-        {
-            'title': 'Lazarus Group Targets Cryptocurrency Exchanges',
-            'url': 'https://example.com/lazarus-crypto-attack',
-            'content': 'The Lazarus Group has launched a new campaign targeting cryptocurrency exchanges in Asia. The attack uses sophisticated malware and exploits known vulnerabilities in exchange platforms.',
-            'summary': 'Lazarus Group targets Asian cryptocurrency exchanges with advanced malware.',
-            'author': 'Crypto Security Team',
-            'published_date': (datetime.now() - timedelta(hours=24)).isoformat(),
-            'source': 'Krebs on Security',
-            'category': 'security_news',
-            'threat_intelligence': {
-                'keywords_found': ['lazarus', 'cryptocurrency', 'malware', 'exchanges'],
-                'malware_mentioned': ['lazarus_malware'],
-                'threat_actors_mentioned': ['lazarus'],
-                'vulnerabilities_mentioned': ['CVE-2024-5678'],
-                'iocs_found': ['crypto.example.com', '192.168.0.100'],
-                'threat_score': 88,
-                'categories': ['apt', 'malware']
-            }
-        }
-    ]
-    
-    # Add more random articles
-    for i in range(15):
-        threats = ['malware', 'phishing', 'ransomware', 'apt', 'vulnerability', 'data breach']
-        threat = random.choice(threats)
-        sources = ['The Hacker News', 'Bleeping Computer', 'Threatpost', 'Security Week', 'Krebs on Security']
-        source = random.choice(sources)
+@threat_intel.route('/security-news/refresh', methods=['POST'])
+@login_required
+def refresh_news_cache():
+    """Manually refresh the news cache."""
+    try:
+        if not get_rss_processor:
+            return jsonify({'error': 'RSS processor not available'}), 503
         
-        article = {
-            'title': f'Sample {threat.title()} Article {i+1}',
-            'url': f'https://example.com/sample-article-{i+1}',
-            'content': f'This is a sample article about {threat} threats. It contains information about recent security incidents and threat intelligence.',
-            'summary': f'Sample article about {threat} threats and security incidents.',
-            'author': 'Sample Author',
-            'published_date': (datetime.now() - timedelta(hours=random.randint(1, 72))).isoformat(),
-            'source': source,
-            'category': 'security_news',
-            'threat_intelligence': {
-                'keywords_found': [threat, 'security', 'threat'],
-                'malware_mentioned': [],
-                'threat_actors_mentioned': [],
-                'vulnerabilities_mentioned': [],
-                'iocs_found': [],
-                'threat_score': random.randint(30, 80),
-                'categories': [threat]
-            }
-        }
-        sample_articles.append(article)
-    
-    return sample_articles
+        rss_processor = get_rss_processor()
+        
+        # Force refresh by processing without cache
+        articles = rss_processor.process_security_news(use_cache=False)
+        
+        return jsonify({
+            'success': True,
+            'articles_refreshed': len(articles),
+            'message': 'News cache refreshed successfully'
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @threat_intel.route('/security-news/search')
 @login_required
@@ -1464,4 +1326,137 @@ def get_test_dashboard_data():
         return jsonify(dashboard)
         
     except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@threat_intel.route('/security-news')
+@login_required
+def get_security_news():
+    """Get security news from RSS feeds with immediate cache access."""
+    try:
+        if not get_rss_processor:
+            # Return empty with message if RSS processor is not available
+            return jsonify({
+                'articles': [],
+                'source': 'error',
+                'cache_fresh': False,
+                'message': 'RSS processor not available - please check system configuration'
+            })
+        
+        rss_processor = get_rss_processor()
+        limit = request.args.get('limit', 20, type=int)
+        category = request.args.get('category', '')
+        
+        # First, try to get cached data immediately
+        cached_articles = rss_processor.get_cached_news()
+        
+        if cached_articles:
+            # Filter by category if specified
+            if category:
+                filtered_articles = [
+                    article for article in cached_articles 
+                    if article.get('category') == category
+                ]
+            else:
+                filtered_articles = cached_articles
+            
+            # Apply limit
+            filtered_articles = filtered_articles[:limit]
+            
+            # Return cached data immediately
+            return jsonify({
+                'articles': filtered_articles,
+                'source': 'cache',
+                'cache_fresh': rss_processor.is_cache_fresh(),
+                'message': f'Loaded {len(filtered_articles)} articles from cache'
+            })
+        
+        # If no cache, try to process feeds
+        print("No cached data available, processing RSS feeds...")
+        if category:
+            articles = rss_processor.get_articles_by_category(category, limit)
+        else:
+            articles = rss_processor.get_latest_articles(limit)
+        
+        # If we got real articles, return them
+        if articles and len(articles) > 0:
+            return jsonify({
+                'articles': articles,
+                'source': 'live',
+                'cache_fresh': False,
+                'message': f'Loaded {len(articles)} articles from RSS feeds'
+            })
+        
+        # If no articles from RSS, check if background processing is still running
+        cache_status = rss_processor.get_cache_status()
+        if not cache_status['has_cache'] and cache_status['background_thread_alive']:
+            # Background thread is still working, return empty with message
+            return jsonify({
+                'articles': [],
+                'source': 'loading',
+                'cache_fresh': False,
+                'message': 'Background processing in progress - please wait a moment and refresh'
+            })
+        
+        # No articles available - return empty with helpful message
+        return jsonify({
+            'articles': [],
+            'source': 'empty',
+            'cache_fresh': False,
+            'message': 'No articles available at the moment - feeds may be temporarily unavailable'
+        })
+        
+    except Exception as e:
+        print(f"Error getting security news: {e}")
+        # Return empty on error
+        return jsonify({
+            'articles': [],
+            'source': 'error',
+            'cache_fresh': False,
+            'message': f'Error occurred: {str(e)} - please try again later'
+        })
+
+@threat_intel.route('/mitre-attack/clear-cache', methods=['POST'])
+@login_required
+def clear_mitre_cache():
+    """Clear MITRE ATT&CK cache and force fresh load."""
+    try:
+        if not get_mitre_attack:
+            return jsonify({'error': 'MITRE ATT&CK not available'}), 503
+        
+        mitre_attack = get_mitre_attack()
+        if not mitre_attack:
+            return jsonify({'error': 'MITRE ATT&CK not initialized'}), 503
+        
+        # Clear cache and reload
+        mitre_attack.clear_cache()
+        
+        # Get new status
+        status = mitre_attack.get_cache_status()
+        
+        return jsonify({
+            'message': 'Cache cleared and data reloaded successfully',
+            'status': status
+        })
+        
+    except Exception as e:
+        print(f"Error clearing MITRE cache: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@threat_intel.route('/mitre-attack/status')
+@login_required
+def get_mitre_status():
+    """Get MITRE ATT&CK cache status."""
+    try:
+        if not get_mitre_attack:
+            return jsonify({'error': 'MITRE ATT&CK not available'}), 503
+        
+        mitre_attack = get_mitre_attack()
+        if not mitre_attack:
+            return jsonify({'error': 'MITRE ATT&CK not initialized'}), 503
+        
+        status = mitre_attack.get_cache_status()
+        return jsonify(status)
+        
+    except Exception as e:
+        print(f"Error getting MITRE status: {e}")
         return jsonify({'error': str(e)}), 500

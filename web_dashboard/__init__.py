@@ -54,5 +54,13 @@ def create_app():
             user.set_password('admin123')
             db.session.add(user)
             db.session.commit()
+        
+        # Initialize RSS processor for background caching
+        try:
+            from data_sources.rss_feeds import get_rss_processor
+            rss_processor = get_rss_processor()
+            print("RSS processor initialized - background caching started")
+        except Exception as e:
+            print(f"Warning: Could not initialize RSS processor: {e}")
     
     return app

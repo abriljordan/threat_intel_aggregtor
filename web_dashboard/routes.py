@@ -1765,3 +1765,528 @@ def cleanup_old_reports_from_db(max_reports=100):
         print(f"Error cleaning up database reports: {e}")
         db.session.rollback()
         return 0
+
+@threat_intel.route('/mitre-attack/correlate-reports')
+@login_required
+def correlate_reports_with_mitre():
+    """Correlate threat intelligence reports with MITRE ATT&CK techniques."""
+    try:
+        from datetime import datetime, timedelta
+        
+        # Get recent reports from database
+        recent_reports = Report.query.order_by(Report.created_at.desc()).limit(100).all()
+        
+        # Initialize correlation data
+        technique_usage = {}
+        tactic_usage = {}
+        
+        # Process each report
+        for report in recent_reports:
+            results = report.get_results()
+            
+            # Analyze AbuseIPDB data
+            if 'abuseipdb' in results and isinstance(results['abuseipdb'], dict):
+                abuse_data = results['abuseipdb'].get('data', {})
+                
+                # Check if we have abuse confidence score
+                abuse_score = abuse_data.get('abuseConfidenceScore', 0)
+                
+                # Map abuse score to MITRE techniques based on threat level
+                if abuse_score > 80:
+                    # High threat - likely malicious activity
+                    technique_mappings = [
+                        {
+                            'technique_id': 'T1190',
+                            'technique_name': 'Exploit Public-Facing Application',
+                            'tactic_id': 'TA0001',
+                            'tactic_name': 'Initial Access'
+                        },
+                        {
+                            'technique_id': 'T1566',
+                            'technique_name': 'Phishing',
+                            'tactic_id': 'TA0001',
+                            'tactic_name': 'Initial Access'
+                        }
+                    ]
+                elif abuse_score > 50:
+                    # Medium threat - suspicious activity
+                    technique_mappings = [
+                        {
+                            'technique_id': 'T1046',
+                            'technique_name': 'Network Service Discovery',
+                            'tactic_id': 'TA0007',
+                            'tactic_name': 'Discovery'
+                        },
+                        {
+                            'technique_id': 'T1110',
+                            'technique_name': 'Brute Force',
+                            'tactic_id': 'TA0006',
+                            'tactic_name': 'Credential Access'
+                        }
+                    ]
+                else:
+                    # Low threat - but still track for correlation
+                    technique_mappings = [
+                        {
+                            'technique_id': 'T1046',
+                            'technique_name': 'Network Service Discovery',
+                            'tactic_id': 'TA0007',
+                            'tactic_name': 'Discovery'
+                        }
+                    ]
+                
+                # Add technique mappings to usage tracking
+                for mapping in technique_mappings:
+                    technique_id = mapping['technique_id']
+                    tactic_id = mapping['tactic_id']
+                    
+                    # Track technique usage
+                    if technique_id not in technique_usage:
+                        technique_usage[technique_id] = {
+                            'count': 0,
+                            'targets': [],
+                            'last_seen': None,
+                            'technique_name': mapping['technique_name'],
+                            'tactic_name': mapping['tactic_name']
+                        }
+                    
+                    technique_usage[technique_id]['count'] += 1
+                    technique_usage[technique_id]['targets'].append(report.target)
+                    if not technique_usage[technique_id]['last_seen'] or report.created_at > technique_usage[technique_id]['last_seen']:
+                        technique_usage[technique_id]['last_seen'] = report.created_at
+                    
+                    # Track tactic usage
+                    if tactic_id not in tactic_usage:
+                        tactic_usage[tactic_id] = {
+                            'count': 0,
+                            'techniques': set(),
+                            'tactic_name': mapping['tactic_name']
+                        }
+                    
+                    tactic_usage[tactic_id]['count'] += 1
+                    tactic_usage[tactic_id]['techniques'].add(technique_id)
+            
+            # Analyze VirusTotal data
+            if 'virustotal' in results and isinstance(results['virustotal'], dict):
+                vt_data = results['virustotal'].get('data', {})
+                
+                # Check for malicious detections
+                last_analysis_stats = vt_data.get('last_analysis_stats', {})
+                malicious_count = last_analysis_stats.get('malicious', 0)
+                suspicious_count = last_analysis_stats.get('suspicious', 0)
+                
+                if malicious_count > 0 or suspicious_count > 0:
+                    # Map malware detections to MITRE techniques
+                    malware_techniques = [
+                        {
+                            'technique_id': 'T1059',
+                            'technique_name': 'Command and Scripting Interpreter',
+                            'tactic_id': 'TA0002',
+                            'tactic_name': 'Execution'
+                        },
+                        {
+                            'technique_id': 'T1071',
+                            'technique_name': 'Application Layer Protocol',
+                            'tactic_id': 'TA0011',
+                            'tactic_name': 'Command and Control'
+                        }
+                    ]
+                    
+                    for mapping in malware_techniques:
+                        technique_id = mapping['technique_id']
+                        tactic_id = mapping['tactic_id']
+                        
+                        # Track technique usage
+                        if technique_id not in technique_usage:
+                            technique_usage[technique_id] = {
+                                'count': 0,
+                                'targets': [],
+                                'last_seen': None,
+                                'technique_name': mapping['technique_name'],
+                                'tactic_name': mapping['tactic_name']
+                            }
+                        
+                        technique_usage[technique_id]['count'] += 1
+                        technique_usage[technique_id]['targets'].append(report.target)
+                        if not technique_usage[technique_id]['last_seen'] or report.created_at > technique_usage[technique_id]['last_seen']:
+                            technique_usage[technique_id]['last_seen'] = report.created_at
+                        
+                        # Track tactic usage
+                        if tactic_id not in tactic_usage:
+                            tactic_usage[tactic_id] = {
+                                'count': 0,
+                                'techniques': set(),
+                                'tactic_name': mapping['tactic_name']
+                            }
+                        
+                        tactic_usage[tactic_id]['count'] += 1
+                        tactic_usage[tactic_id]['techniques'].add(technique_id)
+        
+        # Convert sets to lists for JSON serialization
+        for tactic_id, tactic_data in tactic_usage.items():
+            tactic_data['techniques'] = list(tactic_data['techniques'])
+        
+        # Sort by usage count
+        sorted_techniques = sorted(technique_usage.items(), key=lambda x: x[1]['count'], reverse=True)
+        sorted_tactics = sorted(tactic_usage.items(), key=lambda x: x[1]['count'], reverse=True)
+        
+        return jsonify({
+            'technique_usage': dict(sorted_techniques[:20]),  # Top 20 techniques
+            'tactic_usage': dict(sorted_tactics),
+            'total_reports_analyzed': len(recent_reports),
+            'analysis_timestamp': datetime.utcnow().isoformat()
+        })
+        
+    except Exception as e:
+        print(f"Error correlating reports with MITRE: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@threat_intel.route('/mitre-attack/custom-matrix')
+@login_required
+def generate_custom_attack_matrix():
+    """Generate a custom ATT&CK matrix based on your threat intelligence data."""
+    try:
+        from datetime import datetime, timedelta
+        
+        # Get recent reports from database (same logic as correlate_reports_with_mitre)
+        recent_reports = Report.query.order_by(Report.created_at.desc()).limit(100).all()
+        
+        # Initialize correlation data
+        technique_usage = {}
+        tactic_usage = {}
+        
+        # Process each report (same logic as correlate_reports_with_mitre)
+        for report in recent_reports:
+            results = report.get_results()
+            
+            # Analyze AbuseIPDB data
+            if 'abuseipdb' in results and isinstance(results['abuseipdb'], dict):
+                abuse_data = results['abuseipdb'].get('data', {})
+                
+                # Check if we have abuse confidence score
+                abuse_score = abuse_data.get('abuseConfidenceScore', 0)
+                
+                # Map abuse score to MITRE techniques based on threat level
+                if abuse_score > 80:
+                    # High threat - likely malicious activity
+                    technique_mappings = [
+                        {
+                            'technique_id': 'T1190',
+                            'technique_name': 'Exploit Public-Facing Application',
+                            'tactic_id': 'TA0001',
+                            'tactic_name': 'Initial Access'
+                        },
+                        {
+                            'technique_id': 'T1566',
+                            'technique_name': 'Phishing',
+                            'tactic_id': 'TA0001',
+                            'tactic_name': 'Initial Access'
+                        }
+                    ]
+                elif abuse_score > 50:
+                    # Medium threat - suspicious activity
+                    technique_mappings = [
+                        {
+                            'technique_id': 'T1046',
+                            'technique_name': 'Network Service Discovery',
+                            'tactic_id': 'TA0007',
+                            'tactic_name': 'Discovery'
+                        },
+                        {
+                            'technique_id': 'T1110',
+                            'technique_name': 'Brute Force',
+                            'tactic_id': 'TA0006',
+                            'tactic_name': 'Credential Access'
+                        }
+                    ]
+                else:
+                    # Low threat - but still track for correlation
+                    technique_mappings = [
+                        {
+                            'technique_id': 'T1046',
+                            'technique_name': 'Network Service Discovery',
+                            'tactic_id': 'TA0007',
+                            'tactic_name': 'Discovery'
+                        }
+                    ]
+                
+                # Add technique mappings to usage tracking
+                for mapping in technique_mappings:
+                    technique_id = mapping['technique_id']
+                    tactic_id = mapping['tactic_id']
+                    
+                    # Track technique usage
+                    if technique_id not in technique_usage:
+                        technique_usage[technique_id] = {
+                            'count': 0,
+                            'targets': [],
+                            'last_seen': None,
+                            'technique_name': mapping['technique_name'],
+                            'tactic_name': mapping['tactic_name']
+                        }
+                    
+                    technique_usage[technique_id]['count'] += 1
+                    technique_usage[technique_id]['targets'].append(report.target)
+                    if not technique_usage[technique_id]['last_seen'] or report.created_at > technique_usage[technique_id]['last_seen']:
+                        technique_usage[technique_id]['last_seen'] = report.created_at
+                    
+                    # Track tactic usage
+                    if tactic_id not in tactic_usage:
+                        tactic_usage[tactic_id] = {
+                            'count': 0,
+                            'techniques': set(),
+                            'tactic_name': mapping['tactic_name']
+                        }
+                    
+                    tactic_usage[tactic_id]['count'] += 1
+                    tactic_usage[tactic_id]['techniques'].add(technique_id)
+            
+            # Analyze VirusTotal data
+            if 'virustotal' in results and isinstance(results['virustotal'], dict):
+                vt_data = results['virustotal'].get('data', {})
+                
+                # Check for malicious detections
+                last_analysis_stats = vt_data.get('last_analysis_stats', {})
+                malicious_count = last_analysis_stats.get('malicious', 0)
+                suspicious_count = last_analysis_stats.get('suspicious', 0)
+                
+                if malicious_count > 0 or suspicious_count > 0:
+                    # Map malware detections to MITRE techniques
+                    malware_techniques = [
+                        {
+                            'technique_id': 'T1059',
+                            'technique_name': 'Command and Scripting Interpreter',
+                            'tactic_id': 'TA0002',
+                            'tactic_name': 'Execution'
+                        },
+                        {
+                            'technique_id': 'T1071',
+                            'technique_name': 'Application Layer Protocol',
+                            'tactic_id': 'TA0011',
+                            'tactic_name': 'Command and Control'
+                        }
+                    ]
+                    
+                    for mapping in malware_techniques:
+                        technique_id = mapping['technique_id']
+                        tactic_id = mapping['tactic_id']
+                        
+                        # Track technique usage
+                        if technique_id not in technique_usage:
+                            technique_usage[technique_id] = {
+                                'count': 0,
+                                'targets': [],
+                                'last_seen': None,
+                                'technique_name': mapping['technique_name'],
+                                'tactic_name': mapping['tactic_name']
+                            }
+                        
+                        technique_usage[technique_id]['count'] += 1
+                        technique_usage[technique_id]['targets'].append(report.target)
+                        if not technique_usage[technique_id]['last_seen'] or report.created_at > technique_usage[technique_id]['last_seen']:
+                            technique_usage[technique_id]['last_seen'] = report.created_at
+                        
+                        # Track tactic usage
+                        if tactic_id not in tactic_usage:
+                            tactic_usage[tactic_id] = {
+                                'count': 0,
+                                'techniques': set(),
+                                'tactic_name': mapping['tactic_name']
+                            }
+                        
+                        tactic_usage[tactic_id]['count'] += 1
+                        tactic_usage[tactic_id]['techniques'].add(technique_id)
+        
+        # Convert sets to lists for JSON serialization
+        for tactic_id, tactic_data in tactic_usage.items():
+            tactic_data['techniques'] = list(tactic_data['techniques'])
+        
+        # Create custom matrix data
+        custom_matrix = {
+            'tactics': [],
+            'techniques': [],
+            'metadata': {
+                'name': 'Custom Threat Intelligence Matrix',
+                'description': 'ATT&CK matrix based on your threat intelligence reports',
+                'created': datetime.utcnow().isoformat(),
+                'total_reports': len(recent_reports)
+            }
+        }
+        
+        # Process tactics
+        for tactic_id, tactic_data in tactic_usage.items():
+            tactic_info = {
+                'id': tactic_id,
+                'name': tactic_data['tactic_name'],
+                'usage_count': tactic_data['count'],
+                'technique_count': len(tactic_data['techniques'])
+            }
+            custom_matrix['tactics'].append(tactic_info)
+        
+        # Process techniques
+        for technique_id, technique_data in technique_usage.items():
+            technique_info = {
+                'id': technique_id,
+                'name': technique_data['technique_name'],
+                'tactic': technique_data['tactic_name'],
+                'usage_count': technique_data['count'],
+                'targets': technique_data['targets'][:5],  # Show top 5 targets
+                'last_seen': technique_data['last_seen'].isoformat() if technique_data['last_seen'] else None
+            }
+            custom_matrix['techniques'].append(technique_info)
+        
+        return jsonify(custom_matrix)
+        
+    except Exception as e:
+        print(f"Error generating custom matrix: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@threat_intel.route('/mitre-attack/threat-hunting')
+@login_required
+def threat_hunting_suggestions():
+    """Provide threat hunting suggestions based on your threat intelligence."""
+    try:
+        # Get recent high-threat reports
+        high_threat_reports = Report.query.filter(
+            Report.abuse_score > 80
+        ).order_by(Report.created_at.desc()).limit(20).all()
+        
+        hunting_suggestions = []
+        
+        for report in high_threat_reports:
+            results = report.get_results()
+            suggestions = analyze_report_for_hunting(report.target, results)
+            if suggestions:
+                hunting_suggestions.extend(suggestions)
+        
+        # Group suggestions by technique
+        grouped_suggestions = {}
+        for suggestion in hunting_suggestions:
+            technique_id = suggestion['technique_id']
+            if technique_id not in grouped_suggestions:
+                grouped_suggestions[technique_id] = []
+            grouped_suggestions[technique_id].append(suggestion)
+        
+        return jsonify({
+            'hunting_suggestions': grouped_suggestions,
+            'total_suggestions': len(hunting_suggestions),
+            'high_threat_reports_analyzed': len(high_threat_reports)
+        })
+        
+    except Exception as e:
+        print(f"Error generating hunting suggestions: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# Helper functions for MITRE correlation
+def map_category_to_technique(category):
+    """Map AbuseIPDB categories to MITRE ATT&CK techniques."""
+    category_mapping = {
+        'DDoS Attack': {
+            'technique_id': 'T1498',
+            'technique_name': 'Network Denial of Service',
+            'tactic_id': 'TA0040',
+            'tactic_name': 'Impact'
+        },
+        'Fraud Orders': {
+            'technique_id': 'T1078',
+            'technique_name': 'Valid Accounts',
+            'tactic_id': 'TA0001',
+            'tactic_name': 'Initial Access'
+        },
+        'Hacking': {
+            'technique_id': 'T1190',
+            'technique_name': 'Exploit Public-Facing Application',
+            'tactic_id': 'TA0001',
+            'tactic_name': 'Initial Access'
+        },
+        'Spam': {
+            'technique_id': 'T1566',
+            'technique_name': 'Phishing',
+            'tactic_id': 'TA0001',
+            'tactic_name': 'Initial Access'
+        },
+        'Web App Attack': {
+            'technique_id': 'T1190',
+            'technique_name': 'Exploit Public-Facing Application',
+            'tactic_id': 'TA0001',
+            'tactic_name': 'Initial Access'
+        },
+        'Port Scan': {
+            'technique_id': 'T1046',
+            'technique_name': 'Network Service Discovery',
+            'tactic_id': 'TA0007',
+            'tactic_name': 'Discovery'
+        },
+        'Brute-Force': {
+            'technique_id': 'T1110',
+            'technique_name': 'Brute Force',
+            'tactic_id': 'TA0006',
+            'tactic_name': 'Credential Access'
+        }
+    }
+    
+    return category_mapping.get(category, None)
+
+def map_malware_to_techniques(malware_name):
+    """Map malware families to MITRE ATT&CK techniques."""
+    malware_mapping = {
+        'emotet': ['T1071', 'T1566', 'T1059'],  # Command and Control, Phishing, Command and Scripting Interpreter
+        'trickbot': ['T1071', 'T1566', 'T1059'],
+        'ryuk': ['T1486', 'T1489'],  # Data Encrypted for Impact, Service Stop
+        'wannacry': ['T1486', 'T1489'],
+        'notpetya': ['T1486', 'T1489'],
+        'cobaltstrike': ['T1071', 'T1059', 'T1055'],  # Command and Control, Command and Scripting Interpreter, Process Injection
+        'metasploit': ['T1059', 'T1055', 'T1071'],
+        'powershell': ['T1059', 'T1055'],
+        'cmd': ['T1059'],
+        'javascript': ['T1059'],
+        'vba': ['T1059'],
+        'macro': ['T1059']
+    }
+    
+    malware_lower = malware_name.lower()
+    for key, techniques in malware_mapping.items():
+        if key in malware_lower:
+            return techniques
+    
+    return []
+
+def analyze_report_for_hunting(target, results):
+    """Analyze a report and provide threat hunting suggestions."""
+    suggestions = []
+    
+    # Analyze AbuseIPDB data
+    if 'abuseipdb' in results and isinstance(results['abuseipdb'], dict):
+        abuse_data = results['abuseipdb'].get('data', {})
+        categories = abuse_data.get('reports', [])
+        
+        for category in categories:
+            technique_mapping = map_category_to_technique(category)
+            if technique_mapping:
+                suggestion = {
+                    'technique_id': technique_mapping['technique_id'],
+                    'technique_name': technique_mapping['technique_name'],
+                    'tactic': technique_mapping['tactic_name'],
+                    'target': target,
+                    'category': category,
+                    'hunting_query': generate_hunting_query(technique_mapping['technique_id'], target),
+                    'priority': 'high' if category in ['Hacking', 'Web App Attack'] else 'medium'
+                }
+                suggestions.append(suggestion)
+    
+    return suggestions
+
+def generate_hunting_query(technique_id, target):
+    """Generate a threat hunting query based on MITRE technique and target."""
+    queries = {
+        'T1498': f"Search for DDoS activity targeting {target}",
+        'T1078': f"Look for suspicious account activity related to {target}",
+        'T1190': f"Check for web application attacks against {target}",
+        'T1566': f"Search for phishing emails mentioning {target}",
+        'T1046': f"Look for port scanning activity from {target}",
+        'T1110': f"Check for brute force attempts from {target}",
+        'T1486': f"Monitor for ransomware activity related to {target}",
+        'T1059': f"Look for suspicious command execution related to {target}"
+    }
+    
+    return queries.get(technique_id, f"Investigate {target} for suspicious activity")

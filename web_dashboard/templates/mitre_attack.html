@@ -131,6 +131,30 @@
         justify-content: center;
         z-index: 1000;
     }
+    
+    .tactic-card {
+        border: none;
+        border-radius: 0.5rem;
+        box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+        transition: all 0.2s ease-in-out;
+        border-left: 4px solid #007bff;
+    }
+    
+    .tactic-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+        border-left-color: #0056b3;
+    }
+    
+    .tactic-card .card-title {
+        font-size: 0.9rem;
+        font-weight: 600;
+    }
+    
+    .tactic-card .card-text {
+        font-size: 0.85rem;
+        line-height: 1.3;
+    }
 </style>
 {% endblock %}
 
@@ -290,32 +314,116 @@
         </div>
     </div>
 
-    <!-- Tactics and Techniques Section -->
-    <div class="row">
-        <div class="col-md-4">
-            <div class="card">
-                <div class="card-header">
+    <!-- Actionable Intelligence Section -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-gradient-primary text-white">
                     <h5 class="card-title mb-0">
-                        <i class="fas fa-sitemap text-primary"></i>
-                        Tactics
+                        <i class="fas fa-bullseye text-white"></i>
+                        Actionable Threat Intelligence
+                        <small class="text-white-50 ms-2">
+                            <i class="fas fa-chart-line"></i> Based on your threat reports
+                        </small>
                     </h5>
                 </div>
                 <div class="card-body">
-                    <div id="tactics-list">
-                        <p class="text-muted text-center">Loading tactics...</p>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="card border-0 bg-light">
+                                <div class="card-body">
+                                    <h6 class="card-title">
+                                        <i class="fas fa-chart-pie text-primary"></i>
+                                        Most Active Techniques
+                                    </h6>
+                                    <div id="active-techniques-list">
+                                        <p class="text-muted text-center">Loading correlation data...</p>
+                                    </div>
+                                    <button class="btn btn-sm btn-outline-primary mt-2" onclick="loadCorrelationData()">
+                                        <i class="fas fa-sync-alt"></i> Refresh Analysis
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card border-0 bg-light">
+                                <div class="card-body">
+                                    <h6 class="card-title">
+                                        <i class="fas fa-search text-success"></i>
+                                        Threat Hunting Suggestions
+                                    </h6>
+                                    <div id="hunting-suggestions-list">
+                                        <p class="text-muted text-center">Loading hunting suggestions...</p>
+                                    </div>
+                                    <button class="btn btn-sm btn-outline-success mt-2" onclick="loadHuntingSuggestions()">
+                                        <i class="fas fa-search"></i> Get Suggestions
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row mt-3">
+                        <div class="col-12">
+                            <div class="card border-0 bg-light">
+                                <div class="card-body">
+                                    <h6 class="card-title">
+                                        <i class="fas fa-chess-board text-warning"></i>
+                                        Custom ATT&CK Matrix
+                                    </h6>
+                                    <p class="text-muted small">
+                                        Generate a custom ATT&CK matrix based on your threat intelligence data
+                                    </p>
+                                    <button class="btn btn-warning" onclick="generateCustomMatrix()">
+                                        <i class="fas fa-magic"></i> Generate Custom Matrix
+                                    </button>
+                                    <div id="custom-matrix-container" class="mt-3" style="display: none;">
+                                        <!-- Custom matrix will be displayed here -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
-        <div class="col-md-8">
+    </div>
+
+    <!-- Tactics and Techniques Section -->
+    <div class="row">
+        <div class="col-12">
             <div class="card">
                 <div class="card-header">
                     <h5 class="card-title mb-0">
                         <i class="fas fa-tools text-info"></i>
-                        Techniques
+                        ATT&CK Techniques
                     </h5>
                 </div>
                 <div class="card-body">
+                    <!-- Tactic Selection -->
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <label for="tactic-select" class="form-label">
+                                <i class="fas fa-sitemap text-primary"></i>
+                                Select Tactic
+                            </label>
+                            <select class="form-select" id="tactic-select" onchange="loadTechniquesByTactic(this.value)">
+                                <option value="">All Tactics</option>
+                                <!-- Tactics will be populated here -->
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">
+                                <i class="fas fa-info-circle text-info"></i>
+                                Quick Info
+                            </label>
+                            <div id="tactic-info" class="text-muted small">
+                                Select a tactic to view its techniques
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Techniques Display -->
                     <div id="techniques-list">
                         <p class="text-muted text-center">Select a tactic or search for techniques</p>
                     </div>
@@ -325,17 +433,15 @@
     </div>
 
     <!-- Technique Details Modal -->
-    <div class="modal fade" id="techniqueModal" tabindex="-1" role="dialog">
-        <div class="modal-dialog modal-lg" role="document">
+    <div class="modal fade" id="techniqueModal" tabindex="-1" aria-labelledby="techniqueModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">
+                    <h5 class="modal-title" id="techniqueModalLabel">
                         <i class="fas fa-tools"></i>
                         <span id="technique-modal-title">Technique Details</span>
                     </h5>
-                    <button type="button" class="close" data-dismiss="modal">
-                        <span>&times;</span>
-                    </button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
                     <div id="technique-details">
@@ -346,7 +452,7 @@
                     <a id="technique-mitre-link" href="#" target="_blank" class="btn btn-primary">
                         <i class="fas fa-external-link-alt"></i> View on MITRE ATT&CK
                     </a>
-                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                 </div>
             </div>
         </div>
@@ -355,29 +461,27 @@
     <!-- Loading Spinner -->
     <div id="loading-spinner" class="text-center" style="display: none;">
         <div class="spinner-border text-primary" role="status">
-            <span class="sr-only">Loading...</span>
+            <span class="visually-hidden">Loading...</span>
         </div>
         <p class="mt-2">Loading ATT&CK data...</p>
     </div>
 
     <!-- Error Modal -->
-    <div class="modal fade" id="errorModal" tabindex="-1" role="dialog" data-backdrop="static" data-keyboard="false">
-        <div class="modal-dialog" role="document">
+    <div class="modal fade" id="errorModal" tabindex="-1" aria-labelledby="errorModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title text-danger">
+                    <h5 class="modal-title text-danger" id="errorModalLabel">
                         <i class="fas fa-exclamation-triangle"></i>
                         Error
                     </h5>
-                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                        <span aria-hidden="true">&times;</span>
-                    </button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
                     <p id="error-message"></p>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                     <button type="button" class="btn btn-primary" onclick="retryLoading()">Retry</button>
                 </div>
             </div>
@@ -416,7 +520,10 @@ $(document).ready(function() {
     // Add escape key handler
     $(document).keyup(function(e) {
         if (e.key === "Escape") {
-            $('#errorModal').modal('hide');
+            const errorModal = bootstrap.Modal.getInstance(document.getElementById('errorModal'));
+            if (errorModal) {
+                errorModal.hide();
+            }
         }
     });
 });
@@ -671,32 +778,34 @@ function loadTactics() {
 }
 
 function displayTactics(tactics) {
-    const tacticsDiv = $('#tactics-list');
+    const tacticSelect = $('#tactic-select');
     
     if (tactics.length === 0) {
-        tacticsDiv.html('<p class="text-muted">No tactics available</p>');
+        tacticSelect.html('<option value="">No tactics available</option>');
         return;
     }
     
-    let html = '<div class="list-group">';
-    tactics.forEach(tactic => {
-        // Use shortname for the onclick handler, but show ID in the display
-        const tacticIdentifier = tactic.shortname || tactic.id;
-        html += `
-            <a href="#" class="list-group-item list-group-item-action" onclick="loadTechniquesByTactic('${tacticIdentifier}')">
-                <h6 class="mb-1">${tactic.id}</h6>
-                <p class="mb-1">${tactic.name}</p>
-                <small class="text-muted">${tactic.description || 'No description'}</small>
-            </a>
-        `;
-    });
-    html += '</div>';
+    // Clear existing options except the first one
+    tacticSelect.find('option:not(:first)').remove();
     
-    tacticsDiv.html(html);
+    // Add tactics to dropdown
+    tactics.forEach(tactic => {
+        const tacticIdentifier = tactic.shortname || tactic.id;
+        const optionText = `${tactic.id}: ${tactic.name}`;
+        tacticSelect.append(`<option value="${tacticIdentifier}">${optionText}</option>`);
+    });
 }
 
 function loadTechniquesByTactic(tacticId) {
     console.log('Loading techniques for tactic:', tacticId);
+    
+    if (!tacticId) {
+        // If no tactic selected, load all techniques
+        loadAllTechniques();
+        updateTacticInfo('All Tactics', 'Showing all ATT&CK techniques');
+        return;
+    }
+    
     $('#loading-spinner').show();
     
     $.ajax({
@@ -710,6 +819,11 @@ function loadTechniquesByTactic(tacticId) {
                 return;
             }
             displayTechniques(data.techniques || []);
+            
+            // Update tactic info
+            const selectedOption = $('#tactic-select option:selected');
+            const tacticName = selectedOption.text();
+            updateTacticInfo(tacticName, `Showing ${data.techniques ? data.techniques.length : 0} techniques for this tactic`);
         },
         error: function(xhr, status, error) {
             $('#loading-spinner').hide();
@@ -719,13 +833,24 @@ function loadTechniquesByTactic(tacticId) {
     });
 }
 
+function updateTacticInfo(tacticName, description) {
+    $('#tactic-info').html(`
+        <strong>${tacticName}</strong><br>
+        ${description}
+    `);
+}
+
 function searchTechniques() {
     const query = $('#technique-search-query').val();
     
     if (!query.trim()) {
         loadAllTechniques();
+        updateTacticInfo('All Tactics', 'Showing all ATT&CK techniques');
         return;
     }
+    
+    // Reset tactic selection when searching
+    $('#tactic-select').val('');
     
     $('#loading-spinner').show();
     
@@ -739,6 +864,7 @@ function searchTechniques() {
                 return;
             }
             displayTechniques(data.techniques || []);
+            updateTacticInfo('Search Results', `Found ${data.techniques ? data.techniques.length : 0} techniques matching "${query}"`);
         },
         error: function(xhr, status, error) {
             $('#loading-spinner').hide();
@@ -760,6 +886,7 @@ function loadAllTechniques() {
                 return;
             }
             displayTechniques(data.techniques || []);
+            updateTacticInfo('All Tactics', `Showing all ${data.techniques ? data.techniques.length : 0} ATT&CK techniques`);
         },
         error: function(xhr, status, error) {
             $('#loading-spinner').hide();
@@ -871,16 +998,21 @@ function displayTechniqueDetails(technique) {
     `;
     
     $('#technique-details').html(detailsHtml);
-    $('#techniqueModal').modal('show');
+    const techniqueModal = new bootstrap.Modal(document.getElementById('techniqueModal'));
+    techniqueModal.show();
 }
 
 function showError(message) {
     $('#error-message').text(message);
-    $('#errorModal').modal('show');
+    const errorModal = new bootstrap.Modal(document.getElementById('errorModal'));
+    errorModal.show();
 }
 
 function retryLoading() {
-    $('#errorModal').modal('hide');
+    const errorModal = bootstrap.Modal.getInstance(document.getElementById('errorModal'));
+    if (errorModal) {
+        errorModal.hide();
+    }
     $('#loading-spinner').show();
     
     // Wait a moment then retry
@@ -982,5 +1114,207 @@ function testHeatmapClick() {
         console.log('Chart element not found');
     }
 }
+
+// Actionable Intelligence Functions
+function loadCorrelationData() {
+    const container = $('#active-techniques-list');
+    container.html('<p class="text-muted text-center"><i class="fas fa-spinner fa-spin"></i> Analyzing your threat reports...</p>');
+    
+    $.ajax({
+        url: '/threat-intel/mitre-attack/correlate-reports',
+        method: 'GET',
+        success: function(data) {
+            if (data.error) {
+                container.html(`<p class="text-danger text-center">Error: ${data.error}</p>`);
+                return;
+            }
+            displayActiveTechniques(data.technique_usage, data.total_reports_analyzed);
+        },
+        error: function(xhr, status, error) {
+            container.html(`<p class="text-danger text-center">Failed to load correlation data: ${error}</p>`);
+        }
+    });
+}
+
+function displayActiveTechniques(techniqueUsage, totalReports) {
+    const container = $('#active-techniques-list');
+    
+    if (!techniqueUsage || Object.keys(techniqueUsage).length === 0) {
+        container.html(`
+            <div class="text-center text-muted">
+                <i class="fas fa-info-circle fa-2x mb-2"></i>
+                <p>No threat correlation data available</p>
+                <small>Try running some IP searches to generate threat intelligence</small>
+            </div>
+        `);
+        return;
+    }
+    
+    let html = `<div class="mb-2"><small class="text-muted">Based on ${totalReports} reports</small></div>`;
+    
+    Object.entries(techniqueUsage).slice(0, 5).forEach(([techniqueId, data]) => {
+        const percentage = ((data.count / totalReports) * 100).toFixed(1);
+        html += `
+            <div class="d-flex justify-content-between align-items-center mb-2 p-2 bg-white rounded">
+                <div>
+                    <strong>${techniqueId}</strong><br>
+                    <small class="text-muted">${data.technique_name}</small>
+                </div>
+                <div class="text-end">
+                    <span class="badge bg-primary">${data.count} times</span><br>
+                    <small class="text-muted">${percentage}%</small>
+                </div>
+            </div>
+        `;
+    });
+    
+    container.html(html);
+}
+
+function loadHuntingSuggestions() {
+    const container = $('#hunting-suggestions-list');
+    container.html('<p class="text-muted text-center"><i class="fas fa-spinner fa-spin"></i> Generating hunting suggestions...</p>');
+    
+    $.ajax({
+        url: '/threat-intel/mitre-attack/threat-hunting',
+        method: 'GET',
+        success: function(data) {
+            if (data.error) {
+                container.html(`<p class="text-danger text-center">Error: ${data.error}</p>`);
+                return;
+            }
+            displayHuntingSuggestions(data.hunting_suggestions, data.total_suggestions);
+        },
+        error: function(xhr, status, error) {
+            container.html(`<p class="text-danger text-center">Failed to load hunting suggestions: ${error}</p>`);
+        }
+    });
+}
+
+function displayHuntingSuggestions(suggestions, totalSuggestions) {
+    const container = $('#hunting-suggestions-list');
+    
+    if (!suggestions || Object.keys(suggestions).length === 0) {
+        container.html(`
+            <div class="text-center text-muted">
+                <i class="fas fa-search fa-2x mb-2"></i>
+                <p>No hunting suggestions available</p>
+                <small>No high-threat reports found to analyze</small>
+            </div>
+        `);
+        return;
+    }
+    
+    let html = `<div class="mb-2"><small class="text-muted">${totalSuggestions} suggestions generated</small></div>`;
+    
+    Object.entries(suggestions).slice(0, 3).forEach(([techniqueId, techniqueSuggestions]) => {
+        const suggestion = techniqueSuggestions[0]; // Get first suggestion for this technique
+        const priorityClass = suggestion.priority === 'high' ? 'danger' : 'warning';
+        
+        html += `
+            <div class="mb-2 p-2 bg-white rounded border-start border-${priorityClass} border-3">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <strong>${suggestion.technique_name}</strong><br>
+                        <small class="text-muted">${suggestion.hunting_query}</small>
+                    </div>
+                    <span class="badge bg-${priorityClass}">${suggestion.priority}</span>
+                </div>
+                <small class="text-muted">Target: ${suggestion.target}</small>
+            </div>
+        `;
+    });
+    
+    container.html(html);
+}
+
+function generateCustomMatrix() {
+    const container = $('#custom-matrix-container');
+    container.html('<p class="text-muted text-center"><i class="fas fa-spinner fa-spin"></i> Generating custom ATT&CK matrix...</p>');
+    container.show();
+    
+    $.ajax({
+        url: '/threat-intel/mitre-attack/custom-matrix',
+        method: 'GET',
+        success: function(data) {
+            if (data.error) {
+                container.html(`<p class="text-danger text-center">Error: ${data.error}</p>`);
+                return;
+            }
+            displayCustomMatrix(data);
+        },
+        error: function(xhr, status, error) {
+            container.html(`<p class="text-danger text-center">Failed to generate custom matrix: ${error}</p>`);
+        }
+    });
+}
+
+function displayCustomMatrix(matrixData) {
+    const container = $('#custom-matrix-container');
+    
+    if (!matrixData.tactics || matrixData.tactics.length === 0) {
+        container.html(`
+            <div class="text-center text-muted">
+                <i class="fas fa-chess-board fa-2x mb-2"></i>
+                <p>No custom matrix data available</p>
+                <small>Generate more threat intelligence to create a custom matrix</small>
+            </div>
+        `);
+        return;
+    }
+    
+    let html = `
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">
+                    <i class="fas fa-chart-area"></i>
+                    Custom ATT&CK Matrix - ${matrixData.metadata.name}
+                </h6>
+                <small class="text-muted">Based on ${matrixData.metadata.total_reports} threat reports</small>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Active Tactics</h6>
+                        ${matrixData.tactics.map(tactic => `
+                            <div class="d-flex justify-content-between align-items-center mb-2 p-2 bg-light rounded">
+                                <div>
+                                    <strong>${tactic.name}</strong><br>
+                                    <small class="text-muted">${tactic.technique_count} techniques</small>
+                                </div>
+                                <span class="badge bg-primary">${tactic.usage_count}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Top Techniques</h6>
+                        ${matrixData.techniques.slice(0, 5).map(technique => `
+                            <div class="d-flex justify-content-between align-items-center mb-2 p-2 bg-light rounded">
+                                <div>
+                                    <strong>${technique.id}</strong><br>
+                                    <small class="text-muted">${technique.name}</small>
+                                </div>
+                                <span class="badge bg-success">${technique.usage_count}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    container.html(html);
+}
+
+// Auto-load actionable intelligence when page loads
+$(document).ready(function() {
+    // Existing initialization code...
+    
+    // Load actionable intelligence after a delay
+    setTimeout(function() {
+        loadCorrelationData();
+        loadHuntingSuggestions();
+    }, 3000);
+});
 </script>
 {% endblock %} 

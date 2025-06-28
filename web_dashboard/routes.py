@@ -235,27 +235,102 @@ def search_shodan():
 @api.route('/reports')
 @login_required
 def get_reports():
-    # TODO: Implement proper report retrieval from database
-    return jsonify({
-        'statistics': {
-            'totalReports': 0,
-            'highThreatReports': 0,
-            'todayReports': 0,
-            'avgThreatScore': 0
-        },
-        'charts': {
-            'threatDistribution': {
-                'high': 0,
-                'medium': 0,
-                'low': 0
+    """Get reports from database with statistics and charts."""
+    try:
+        from datetime import datetime, timedelta
+        
+        # Get all reports ordered by creation date
+        all_reports = Report.query.order_by(Report.created_at.desc()).all()
+        
+        # Calculate statistics
+        total_reports = len(all_reports)
+        high_threat_reports = Report.query.filter(Report.abuse_score > 80).count()
+        
+        # Today's reports
+        today = datetime.utcnow().date()
+        today_reports = Report.query.filter(
+            db.func.date(Report.created_at) == today
+        ).count()
+        
+        # Average threat score
+        avg_score = db.session.query(db.func.avg(Report.abuse_score)).scalar() or 0
+        
+        # Threat distribution
+        high_threat = Report.query.filter(Report.abuse_score > 80).count()
+        medium_threat = Report.query.filter(
+            Report.abuse_score > 50, 
+            Report.abuse_score <= 80
+        ).count()
+        low_threat = Report.query.filter(Report.abuse_score <= 50).count()
+        
+        # Reports over time (last 7 days)
+        reports_over_time = []
+        for i in range(7):
+            date = today - timedelta(days=i)
+            count = Report.query.filter(
+                db.func.date(Report.created_at) == date
+            ).count()
+            reports_over_time.append({
+                'date': date.strftime('%Y-%m-%d'),
+                'count': count
+            })
+        
+        # Convert reports to list format
+        reports_list = []
+        for report in all_reports[:50]:  # Limit to last 50 reports
+            reports_list.append({
+                'id': report.id,
+                'target': report.target,
+                'timestamp': report.created_at.isoformat(),
+                'abuse_score': report.abuse_score,
+                'is_malicious': report.is_malicious,
+                'results': report.get_results()
+            })
+        
+        return jsonify({
+            'statistics': {
+                'totalReports': total_reports,
+                'highThreatReports': high_threat_reports,
+                'todayReports': today_reports,
+                'avgThreatScore': round(avg_score, 2)
             },
-            'reportsOverTime': {
-                'labels': [],
-                'data': []
-            }
-        },
-        'reports': []
-    })
+            'charts': {
+                'threatDistribution': {
+                    'high': high_threat,
+                    'medium': medium_threat,
+                    'low': low_threat
+                },
+                'reportsOverTime': {
+                    'labels': [r['date'] for r in reversed(reports_over_time)],
+                    'data': [r['count'] for r in reversed(reports_over_time)]
+                }
+            },
+            'reports': reports_list
+        })
+        
+    except Exception as e:
+        print(f"Error fetching reports from database: {e}")
+        return jsonify({
+            'statistics': {
+                'totalReports': 0,
+                'highThreatReports': 0,
+                'todayReports': 0,
+                'avgThreatScore': 0
+            },
+            'charts': {
+                'threatDistribution': {
+                    'high': 0,
+                    'medium': 0,
+                    'low': 0
+                },
+                'reportsOverTime': {
+                    'labels': [],
+                    'data': []
+                }
+            },
+            'reports': [],
+            'error': str(e)
+        }), 500
 
 @api.route('/dashboard-stats')
 @login_required

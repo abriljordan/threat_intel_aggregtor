@@ -27,3 +27,5 @@ pygments==2.19.2
 feedparser==6.0.10
 beautifulsoup4==4.12.2
 lxml==5.1.0
+# PostgreSQL driver
+psycopg2-binary==2.9.9

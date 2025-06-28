@@ -54,7 +54,8 @@ def create_default_user():
             username='admin',
             email='admin@threatintel.local'
         )
-        admin_user.set_password('admin123')
+        # Use sha256 method instead of scrypt to avoid LibreSSL compatibility issues
+        admin_user.password_hash = generate_password_hash('admin123', method='pbkdf2:sha256')
         
         # Add to database
         db.session.add(admin_user)

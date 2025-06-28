@@ -19,7 +19,16 @@ def create_app():
     
     # Configure the application
     app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'dev-key-please-change')
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///threat_intel.db')
+    
+    # Use PostgreSQL if available, fallback to SQLite
+    database_url = os.getenv('THREAT_INTEL_DATABASE_URL')
+    if database_url:
+        app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+        print(f"Using PostgreSQL database: {database_url.split('@')[1] if '@' in database_url else database_url}")
+    else:
+        app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///threat_intel.db'
+        print("Using SQLite database (fallback)")
+    
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
     # Initialize extensions with app

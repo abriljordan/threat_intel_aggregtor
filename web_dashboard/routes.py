@@ -6,10 +6,11 @@ import json
 import sys
 import os
 from dotenv import load_dotenv
-from .models import User
+from .models import User, Report, db
 import glob
 import sqlite3
 from threat_intelligence.threat_repository import get_threat_repository, ThreatIntelligenceRepository
+import time
 
 # Add parent directory to path to import API clients
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -47,11 +48,34 @@ except ImportError as e:
     get_rss_processor = None
     advanced_dashboard = None
 
-# Initialize API clients
-abuseipdb_client = AbuseIPDBClient(os.getenv('ABUSEIPDB_API_KEY'))
-virustotal_client = VirusTotalClient(os.getenv('VIRUSTOTAL_API_KEY'))
-shodan_client = ShodanClient(os.getenv('SHODAN_API_KEY'))
-httpbl_client = HttpBLClient(os.getenv('HTTPBL_ACCESS_KEY'))
+# Initialize API clients with error handling
+def get_abuseipdb_client():
+    """Get AbuseIPDB client with error handling."""
+    try:
+        return AbuseIPDBClient(os.getenv('ABUSEIPDB_API_KEY'))
+    except ValueError:
+        return None
+
+def get_virustotal_client():
+    """Get VirusTotal client with error handling."""
+    try:
+        return VirusTotalClient(os.getenv('VIRUSTOTAL_API_KEY'))
+    except ValueError:
+        return None
+
+def get_shodan_client():
+    """Get Shodan client with error handling."""
+    try:
+        return ShodanClient(os.getenv('SHODAN_API_KEY'))
+    except ValueError:
+        return None
+
+def get_httpbl_client():
+    """Get HttpBL client with error handling."""
+    try:
+        return HttpBLClient(os.getenv('HTTPBL_ACCESS_KEY'))
+    except ValueError:
+        return None
 
 # Initialize network monitor manager
 api_keys = {
@@ -157,13 +181,32 @@ def check_target(target):
 
         results = {}
         if 'abuseipdb' in apis or 'all' in apis:
-            results['abuseipdb'] = abuseipdb_client.check_ip(target)
+            client = get_abuseipdb_client()
+            if client:
+                results['abuseipdb'] = client.check_ip(target)
+            else:
+                results['abuseipdb'] = {"error": "AbuseIPDB API key not configured"}
+        
         if 'virustotal' in apis or 'all' in apis:
-            results['virustotal'] = virustotal_client.check_ip(target)
+            client = get_virustotal_client()
+            if client:
+                results['virustotal'] = client.check_ip(target)
+            else:
+                results['virustotal'] = {"error": "VirusTotal API key not configured"}
+        
         if 'shodan' in apis or 'all' in apis:
-            results['shodan'] = shodan_client.check_ip(target)
+            client = get_shodan_client()
+            if client:
+                results['shodan'] = client.check_ip(target)
+            else:
+                results['shodan'] = {"error": "Shodan API key not configured"}
+        
         if 'httpbl' in apis or 'all' in apis:
-            results['httpbl'] = httpbl_client.check_ip(target)
+            client = get_httpbl_client()
+            if client:
+                results['httpbl'] = client.check_ip(target)
+            else:
+                results['httpbl'] = {"error": "HttpBL API key not configured"}
 
         save_report(target, results)
         return jsonify(results)
@@ -178,9 +221,14 @@ def search_shodan():
         query = data.get('query')
         if not query:
             return jsonify({'error': 'Query is required'}), 400
-        # Use check_domain for domain search
-        results = shodan_client.check_domain(query)
-        return jsonify(results)
+        
+        client = get_shodan_client()
+        if client:
+            # Use check_domain for domain search
+            results = client.check_domain(query)
+            return jsonify(results)
+        else:
+            return jsonify({'error': 'Shodan API key not configured'}), 503
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -209,8 +257,40 @@ def get_reports():
         'reports': []
     })
 
+@api.route('/dashboard-stats')
+@login_required
+def get_dashboard_stats_api():
+    """Get dashboard statistics as JSON."""
+    try:
+        stats = get_dashboard_stats()
+        return jsonify(stats)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 def save_report(target, results):
-    # TODO: Implement proper report saving to database
+    """Save report to database."""
+    try:
+        # Create new report
+        report = Report(target=target.strip())
+        report.set_results(results)
+        
+        # Save to database
+        db.session.add(report)
+        db.session.commit()
+        
+        print(f"Saved report for {target} to database (ID: {report.id})")
+        
+        # Clean up old reports from database (keep last 100)
+        cleanup_old_reports_from_db(max_reports=100)
+        
+    except Exception as e:
+        print(f"Error saving report to database: {e}")
+        db.session.rollback()
+        # Fallback to file storage if database fails
+        save_report_to_file(target, results)
+
+def save_report_to_file(target, results):
+    """Fallback: Save report to file (legacy method)."""
     reports_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'reports')
     os.makedirs(reports_dir, exist_ok=True)
     
@@ -225,6 +305,37 @@ def save_report(target, results):
         }, f, indent=2)
 
 def get_dashboard_stats():
+    """Get dashboard statistics from database."""
+    try:
+        # Get total counts
+        total_checks = Report.query.count()
+        malicious_ips = Report.query.filter_by(is_malicious=True).count()
+        
+        # Get recent activity (last 5 reports)
+        recent_reports = Report.query.order_by(Report.created_at.desc()).limit(5).all()
+        recent_activity = []
+        
+        for report in recent_reports:
+            recent_activity.append({
+                'target': report.target,
+                'timestamp': report.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+                'is_malicious': report.is_malicious
+            })
+        
+        return {
+            'total_checks': total_checks,
+            'malicious_ips': malicious_ips,
+            'total_reports': total_checks,
+            'recent_activity': recent_activity
+        }
+        
+    except Exception as e:
+        print(f"Error getting stats from database: {e}")
+        # Fallback to file-based stats
+        return get_dashboard_stats_from_files()
+
+def get_dashboard_stats_from_files():
+    """Fallback: Get dashboard statistics from files (legacy method)."""
     reports_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'reports')
     if not os.path.exists(reports_dir):
         return {
@@ -269,6 +380,31 @@ def get_dashboard_stats():
 
 def load_recent_report(target, max_age_hours=24):
     """Load the most recent report for a target if it's within max_age_hours."""
+    try:
+        from .models import Report
+        from datetime import datetime, timedelta
+        
+        # Calculate cutoff time
+        cutoff_time = datetime.utcnow() - timedelta(hours=max_age_hours)
+        
+        # Get most recent report for this target
+        report = Report.query.filter(
+            Report.target == target.strip(),
+            Report.created_at >= cutoff_time
+        ).order_by(Report.created_at.desc()).first()
+        
+        if report:
+            return report.get_results()
+        
+        return None
+        
+    except Exception as e:
+        print(f"Error loading report from database: {e}")
+        # Fallback to file-based loading
+        return load_recent_report_from_file(target, max_age_hours)
+
+def load_recent_report_from_file(target, max_age_hours=24):
+    """Fallback: Load recent report from file (legacy method)."""
     reports_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'reports')
     pattern = os.path.join(reports_dir, f'report_{target}_*.json')
     report_files = sorted(glob.glob(pattern), reverse=True)
@@ -1460,3 +1596,97 @@ def get_mitre_status():
     except Exception as e:
         print(f"Error getting MITRE status: {e}")
         return jsonify({'error': str(e)}), 500
+
+def cleanup_old_reports(max_reports=100, max_age_days=30):
+    """Clean up old reports to prevent the folder from growing too large."""
+    reports_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'reports')
+    if not os.path.exists(reports_dir):
+        return
+    
+    # Get all report files
+    report_files = glob.glob(os.path.join(reports_dir, 'report_*.json'))
+    
+    # Sort by modification time (oldest first)
+    report_files.sort(key=os.path.getmtime)
+    
+    # Calculate cutoff date for age-based cleanup
+    cutoff_time = time.time() - (max_age_days * 24 * 3600)
+    
+    files_to_delete = []
+    
+    # Add files older than max_age_days
+    for report_file in report_files:
+        if os.path.getmtime(report_file) < cutoff_time:
+            files_to_delete.append(report_file)
+    
+    # If we still have too many files, delete the oldest ones
+    remaining_files = [f for f in report_files if f not in files_to_delete]
+    if len(remaining_files) > max_reports:
+        files_to_delete.extend(remaining_files[:-max_reports])
+    
+    # Delete the files
+    for file_path in files_to_delete:
+        try:
+            os.remove(file_path)
+            print(f"Cleaned up old report: {os.path.basename(file_path)}")
+        except Exception as e:
+            print(f"Error deleting {file_path}: {e}")
+    
+    if files_to_delete:
+        print(f"Cleaned up {len(files_to_delete)} old report files")
+    
+    return len(files_to_delete)
+
+@api.route('/cleanup-reports', methods=['POST'])
+@login_required
+def cleanup_reports():
+    """Manually trigger report cleanup."""
+    try:
+        data = request.get_json() or {}
+        max_reports = data.get('max_reports', 100)
+        max_age_days = data.get('max_age_days', 7)
+        
+        # Clean up database reports
+        db_deleted = cleanup_old_reports_from_db(max_reports=max_reports)
+        
+        # Clean up file reports (legacy)
+        file_deleted = cleanup_old_reports(max_reports=50, max_age_days=max_age_days)
+        
+        total_deleted = db_deleted + file_deleted
+        
+        return jsonify({
+            'success': True,
+            'message': f'Cleaned up {total_deleted} old report files (DB: {db_deleted}, Files: {file_deleted})',
+            'deleted_count': total_deleted,
+            'database_deleted': db_deleted,
+            'files_deleted': file_deleted
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+def cleanup_old_reports_from_db(max_reports=100):
+    """Clean up old reports from database."""
+    try:
+        from .models import Report
+        
+        # Get total count
+        total_count = Report.query.count()
+        
+        if total_count > max_reports:
+            # Get the IDs of reports to keep (most recent)
+            reports_to_keep = Report.query.order_by(Report.created_at.desc()).limit(max_reports).all()
+            keep_ids = [r.id for r in reports_to_keep]
+            
+            # Delete older reports
+            deleted_count = Report.query.filter(~Report.id.in_(keep_ids)).delete()
+            db.session.commit()
+            
+            print(f"Cleaned up {deleted_count} old reports from database")
+            return deleted_count
+        
+        return 0
+        
+    except Exception as e:
+        print(f"Error cleaning up database reports: {e}")
+        db.session.rollback()
+        return 0

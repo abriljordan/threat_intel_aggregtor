@@ -81,6 +81,19 @@
 
     <!-- Stats Cards -->
     <div class="row mb-4">
+        <div class="col-12 mb-3">
+            <div class="d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Dashboard Statistics</h5>
+                <div>
+                    <button type="button" class="btn btn-outline-warning btn-sm me-2" onclick="cleanupReports()">
+                        <i class="fas fa-broom me-1"></i>Cleanup Reports
+                    </button>
+                    <button type="button" class="btn btn-outline-primary btn-sm" onclick="updateDashboardStats()">
+                        <i class="fas fa-sync-alt me-1"></i>Refresh Stats
+                    </button>
+                </div>
+            </div>
+        </div>
         <div class="col-md-3">
             <div class="card stat-card">
                 <div class="card-body">
@@ -215,7 +228,7 @@
 {% block extra_js %}
 <script>
     // Initialize charts
-    const threatChart = new Chart(document.getElementById('threatChart'), {
+    window.threatChart = new Chart(document.getElementById('threatChart'), {
         type: 'doughnut',
         data: {
             labels: ['Malicious', 'Suspicious', 'Clean'],
@@ -292,6 +305,84 @@
             `;
             resultsDiv.appendChild(card);
         }
+        
+        // Refresh dashboard stats after search
+        updateDashboardStats();
+    }
+    
+    // Update dashboard statistics
+    async function updateDashboardStats() {
+        try {
+            console.log('Updating dashboard stats...');
+            const response = await fetch('/api/dashboard-stats');
+            const stats = await response.json();
+            console.log('Received stats:', stats);
+            
+            // Update the stats display
+            const totalChecksElement = document.getElementById('totalChecks');
+            const maliciousIPsElement = document.getElementById('maliciousIPs');
+            const totalReportsElement = document.getElementById('totalReports');
+            
+            if (totalChecksElement) {
+                totalChecksElement.textContent = stats.total_checks || 0;
+                console.log('Updated total checks to:', stats.total_checks);
+            }
+            if (maliciousIPsElement) {
+                maliciousIPsElement.textContent = stats.malicious_ips || 0;
+                console.log('Updated malicious IPs to:', stats.malicious_ips);
+            }
+            if (totalReportsElement) {
+                totalReportsElement.textContent = stats.total_reports || 0;
+                console.log('Updated total reports to:', stats.total_reports);
+            }
+            
+            // Update recent activity
+            const recentActivityDiv = document.getElementById('recentActivity');
+            if (recentActivityDiv && stats.recent_activity) {
+                if (stats.recent_activity.length > 0) {
+                    let activityHTML = '';
+                    stats.recent_activity.forEach(activity => {
+                        activityHTML += `
+                            <div class="list-group-item d-flex justify-content-between align-items-center">
+                                <div>
+                                    <strong>${activity.target}</strong>
+                                    ${activity.is_malicious ? '<span class="badge bg-danger ms-2">Malicious</span>' : ''}
+                                </div>
+                                <small class="text-muted">${activity.timestamp}</small>
+                            </div>
+                        `;
+                    });
+                    recentActivityDiv.innerHTML = activityHTML;
+                    console.log('Updated recent activity with', stats.recent_activity.length, 'items');
+                } else {
+                    recentActivityDiv.innerHTML = '<div class="list-group-item text-muted">No recent activity</div>';
+                    console.log('Updated recent activity: no items');
+                }
+            }
+            
+            // Update threat distribution chart
+            updateThreatChart(stats);
+            
+        } catch (error) {
+            console.error('Error updating dashboard stats:', error);
+        }
+    }
+    
+    // Update threat distribution chart
+    function updateThreatChart(stats) {
+        try {
+            if (window.threatChart) {
+                const malicious = stats.malicious_ips || 0;
+                const total = stats.total_checks || 0;
+                const clean = total - malicious;
+                
+                window.threatChart.data.datasets[0].data = [malicious, 0, clean];
+                window.threatChart.update();
+                console.log('Updated threat chart:', { malicious, clean, total });
+            }
+        } catch (error) {
+            console.error('Error updating threat chart:', error);
+        }
     }
 
     // Add recent activity
@@ -343,5 +434,38 @@
     tooltipTriggerList.forEach(function (tooltipTriggerEl) {
         new bootstrap.Tooltip(tooltipTriggerEl);
     });
+
+    // Cleanup old reports
+    async function cleanupReports() {
+        if (!confirm('This will delete old report files. Continue?')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/cleanup-reports', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    max_reports: 50,
+                    max_age_days: 7
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showAlert(result.message, 'success');
+                // Refresh stats after cleanup
+                setTimeout(updateDashboardStats, 1000);
+            } else {
+                showAlert('Cleanup failed: ' + result.error, 'danger');
+            }
+        } catch (error) {
+            console.error('Error during cleanup:', error);
+            showAlert('Error during cleanup: ' + error.message, 'danger');
+        }
+    }
 </script>
 {% endblock %}

@@ -1,0 +1,26 @@
+{
+  "target": " 47.128.27.190",
+  "timestamp": "2025-06-28T17:42:38.844348",
+  "results": {
+    "abuseipdb": {
+      "data": {
+        "ipAddress": "47.128.27.190",
+        "isPublic": true,
+        "ipVersion": 4,
+        "isWhitelisted": false,
+        "abuseConfidenceScore": 30,
+        "countryCode": "SG",
+        "usageType": "Data Center/Web Hosting/Transit",
+        "isp": "Amazon Data Services Singapore",
+        "domain": "amazon.com",
+        "hostnames": [
+          "ec2-47-128-27-190.ap-southeast-1.compute.amazonaws.com"
+        ],
+        "isTor": false,
+        "totalReports": 15,
+        "numDistinctUsers": 8,
+        "lastReportedAt": "2025-06-28T09:13:28+00:00"
+      }
+    }
+  }
+}

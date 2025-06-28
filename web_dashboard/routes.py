@@ -159,6 +159,81 @@ def login():
         
     return render_template('auth/login.html')
 
+@auth.route('/register', methods=['GET', 'POST'])
+def register():
+    if current_user.is_authenticated:
+        return redirect(url_for('main.dashboard'))
+    
+    if request.method == 'POST':
+        username = request.form.get('username')
+        email = request.form.get('email')
+        password = request.form.get('password')
+        confirm_password = request.form.get('confirm_password')
+        terms = request.form.get('terms')
+        
+        # Validation
+        errors = []
+        
+        # Check if username already exists
+        if User.query.filter_by(username=username).first():
+            errors.append('Username already exists')
+        
+        # Check if email already exists
+        if User.query.filter_by(email=email).first():
+            errors.append('Email already registered')
+        
+        # Validate username format
+        if not username or len(username) < 3 or len(username) > 20:
+            errors.append('Username must be 3-20 characters long')
+        elif not username.replace('_', '').replace('-', '').isalnum():
+            errors.append('Username can only contain letters, numbers, underscore, and dash')
+        
+        # Validate email format
+        if not email or '@' not in email:
+            errors.append('Please enter a valid email address')
+        
+        # Validate password strength
+        if not password or len(password) < 8:
+            errors.append('Password must be at least 8 characters long')
+        elif not any(c.isupper() for c in password):
+            errors.append('Password must contain at least one uppercase letter')
+        elif not any(c.islower() for c in password):
+            errors.append('Password must contain at least one lowercase letter')
+        elif not any(c.isdigit() for c in password):
+            errors.append('Password must contain at least one number')
+        elif not any(c in '!@#$%^&*' for c in password):
+            errors.append('Password must contain at least one special character (!@#$%^&*)')
+        
+        # Check password confirmation
+        if password != confirm_password:
+            errors.append('Passwords do not match')
+        
+        # Check terms agreement
+        if not terms:
+            errors.append('You must agree to the Terms of Service and Privacy Policy')
+        
+        if errors:
+            for error in errors:
+                flash(error, 'danger')
+        else:
+            try:
+                # Create new user
+                user = User(username=username, email=email)
+                user.set_password(password)
+                
+                db.session.add(user)
+                db.session.commit()
+                
+                flash('Account created successfully! You can now log in.', 'success')
+                return redirect(url_for('auth.login'))
+                
+            except Exception as e:
+                db.session.rollback()
+                flash('Error creating account. Please try again.', 'danger')
+                print(f"Registration error: {e}")
+    
+    return render_template('auth/register.html')
+
 @auth.route('/logout')
 @login_required
 def logout():

@@ -58,7 +58,7 @@ cd threat_intel_aggregator
 ### 2. Set Up Virtual Environment
 ```bash
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/bin/activate
 ```
 
 ### 3. Install Dependencies
@@ -101,9 +101,53 @@ python run.py
 
 ### Access the Dashboard
 1. Open your browser and navigate to `http://localhost:5000`
-2. Log in with default credentials:
+2. **For new users**: Click "Register" to create an account
+3. **For existing users**: Log in with your credentials
+4. **Default admin account**:
    - **Username**: `admin`
    - **Password**: `admin123`
+
+### User Management
+
+#### Self-Registration
+New users can create accounts through the web interface:
+1. Click "Register" in the navigation bar
+2. Fill out the registration form with:
+   - Username (3-20 characters, alphanumeric with underscore/dash)
+   - Email address
+   - Strong password (8+ chars, uppercase, lowercase, number, special char)
+   - Password confirmation
+   - Terms of service agreement
+3. Click "Create Account"
+4. Log in with your new credentials
+
+#### Administrative User Management
+Use the command-line tool for user administration:
+
+```bash
+# List all users
+python manage_users.py list
+
+# Create a new user
+python manage_users.py create username email@example.com Password123!
+
+# Delete a user
+python manage_users.py delete username
+
+# Reset user password
+python manage_users.py reset-password username NewPassword123!
+
+# Show user details
+python manage_users.py show username
+```
+
+#### Security Features
+- **Password Requirements**: Minimum 8 characters with uppercase, lowercase, number, and special character
+- **Username Validation**: 3-20 characters, alphanumeric with underscore/dash
+- **Email Validation**: Proper email format required
+- **Duplicate Prevention**: Username and email must be unique
+- **Terms Agreement**: Users must agree to Terms of Service and Privacy Policy
+- **Admin Protection**: Default admin account cannot be deleted
 
 ### Test the Integration
 ```bash

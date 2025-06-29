@@ -31,11 +31,35 @@ A comprehensive security monitoring solution that combines external threat intel
 
 ## 📸 Screenshots
 
+### 🔐 Authentication & User Management
 | Feature | Screenshot |
 |---------|------------|
 | **Login Page** | ![Login Page](screenshots/login_page.png) |
-| **Dashboard** | ![Dashboard](screenshots/dashboard.png) |
+| **Create Account** | ![Create Account](screenshots/create_account.png) |
+
+### 📊 Dashboard & Analytics
+| Feature | Screenshot |
+|---------|------------|
+| **Main Dashboard** | ![Dashboard](screenshots/dashboard.png) |
+| **Advanced Dashboard** | ![Advanced Dashboard](screenshots/advanced_dashboard.png) |
+
+### 🔍 Threat Intelligence & Search
+| Feature | Screenshot |
+|---------|------------|
+| **IP Search Interface** | ![Search](screenshots/search.png) |
+| **Threat Intelligence** | ![Threat Intelligence](screenshots/threat_intel.png) |
+| **MITRE ATT&CK Integration** | ![MITRE ATT&CK](screenshots/mitre%20attack.png) |
+
+### 📰 News & Reports
+| Feature | Screenshot |
+|---------|------------|
+| **Security News Feed** | ![News](screenshots/news.png) |
 | **Reports View** | ![Reports](screenshots/reports.png) |
+
+### 🌐 Network Monitoring
+| Feature | Screenshot |
+|---------|------------|
+| **Network Monitoring Dashboard** | ![Network Monitoring](screenshots/network_monitoring.png) |
 
 ## 📋 Prerequisites
 
